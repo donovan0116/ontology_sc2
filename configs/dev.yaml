@@ -1,0 +1,34 @@
+game:
+  map_name: AcropolisLE
+  realtime: false
+  game_step: 8
+  save_replay: true
+
+player:
+  race: Terran
+
+opponent:
+  race: Terran
+  difficulty: Easy
+
+bot:
+  worker_limit: 22
+  attack_marine_threshold: 10
+  supply_buffer: 4
+  max_barracks: 1
+  decision_interval_steps: 4
+  build_search_radius: 20
+  building_spacing: 7
+
+experiment:
+  run_name: dev
+  games: 1
+  output_root: runs
+  replay_root: replays
+  continue_on_error: true
+
+logging:
+  event_log_enabled: true
+  snapshot_interval_steps: 16
+  log_level: INFO
+

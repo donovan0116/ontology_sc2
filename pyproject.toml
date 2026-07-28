@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ontology-sc2-agent"
+version = "0.1.0"
+description = "A minimal Terran rule agent and experiment pipeline built on BurnySc2."
+readme = "README.md"
+requires-python = ">=3.11,<3.15"
+dependencies = [
+  "burnysc2==7.3.0",
+  "loguru==0.7.3",
+  "PyYAML==6.0.2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy==1.17.1",
+  "pytest==8.4.2",
+  "ruff==0.12.12",
+  "types-PyYAML==6.0.12.20250822",
+]
+
+[project.scripts]
+sc2-agent = "sc2_ontology_agent.cli:main"
+
+[dependency-groups]
+dev = [
+  "mypy==1.17.1",
+  "pytest==8.4.2",
+  "ruff==0.12.12",
+  "types-PyYAML==6.0.12.20250822",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+markers = [
+  "integration: launches the real StarCraft II client and is opt-in",
+]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "N", "SIM", "UP", "W"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src"]
+strict = true
+warn_unused_ignores = true
