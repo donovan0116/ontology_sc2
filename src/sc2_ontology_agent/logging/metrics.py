@@ -5,7 +5,7 @@ from collections import Counter
 from pathlib import Path
 
 from sc2_ontology_agent.domain.intent import MacroIntent
-from sc2_ontology_agent.domain.records import ExecutionResult, ExecutionStatus
+from sc2_ontology_agent.domain.records import ExecutionResult, ExecutionStatus, StrategyEvent
 from sc2_ontology_agent.domain.state import GameSnapshot
 
 
@@ -22,6 +22,13 @@ class MetricsCollector:
         self.failed_action_count = 0
         self.waiting_action_count = 0
         self.first_attack_time: float | None = None
+        self.production_phase_reached: str | None = None
+        self.first_scout_time_seconds: float | None = None
+        self.first_expansion_time_seconds: float | None = None
+        self.stim_completed_time_seconds: float | None = None
+        self.first_defense_time_seconds: float | None = None
+        self.task_failure_count = 0
+        self.command_suppression_count = 0
         self._last_snapshot: GameSnapshot | None = None
 
     @property
@@ -57,6 +64,34 @@ class MetricsCollector:
         if self.first_attack_time is None:
             self.first_attack_time = game_time_seconds
 
+    def record_strategy_event(self, event: StrategyEvent) -> None:
+        if event.event_type == "strategy_phase_changed":
+            phase = event.details.get("phase")
+            if isinstance(phase, str):
+                self.production_phase_reached = phase
+        elif event.event_type == "command_suppressed":
+            self.command_suppression_count += 1
+        elif event.event_type == "combat_mode_changed":
+            if event.details.get("mode") == "defend" and self.first_defense_time_seconds is None:
+                self.first_defense_time_seconds = event.game_time_seconds
+        elif event.event_type == "task_state_changed":
+            state = event.details.get("state")
+            if state == "failed":
+                self.task_failure_count += 1
+            task_key = event.details.get("task_key")
+            if (
+                task_key == "research:stim"
+                and state == "completed"
+                and self.stim_completed_time_seconds is None
+            ):
+                self.stim_completed_time_seconds = event.game_time_seconds
+            if state != "accepted":
+                return
+            if task_key == "scout:enemy_start" and self.first_scout_time_seconds is None:
+                self.first_scout_time_seconds = event.game_time_seconds
+            elif task_key == "build:expansion" and self.first_expansion_time_seconds is None:
+                self.first_expansion_time_seconds = event.game_time_seconds
+
     def finalize(
         self,
         result: str,
@@ -80,6 +115,13 @@ class MetricsCollector:
             "failed_action_count": self.failed_action_count,
             "waiting_action_count": self.waiting_action_count,
             "first_attack_time": self.first_attack_time,
+            "production_phase_reached": self.production_phase_reached,
+            "first_scout_time_seconds": self.first_scout_time_seconds,
+            "first_expansion_time_seconds": self.first_expansion_time_seconds,
+            "stim_completed_time_seconds": self.stim_completed_time_seconds,
+            "first_defense_time_seconds": self.first_defense_time_seconds,
+            "task_failure_count": self.task_failure_count,
+            "command_suppression_count": self.command_suppression_count,
             "exception": exception,
             "replay_path": replay_path,
         }

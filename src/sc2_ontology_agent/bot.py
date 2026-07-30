@@ -5,15 +5,20 @@ from pathlib import Path
 from sc2.bot_ai import BotAI
 from sc2.data import Result
 from sc2.ids.unit_typeid import UnitTypeId
+from sc2.ids.upgrade_id import UpgradeId
 
 from sc2_ontology_agent.config import BotConfig, GameConfig, LoggingConfig
 from sc2_ontology_agent.domain.intent import IntentType, MacroIntent
-from sc2_ontology_agent.domain.records import ExecutionStatus
+from sc2_ontology_agent.domain.records import ExecutionStatus, StrategyEvent
 from sc2_ontology_agent.domain.state import GameSnapshot
 from sc2_ontology_agent.execution.simple_executor import SimpleExecutor
 from sc2_ontology_agent.logging.event_logger import EventLogger
 from sc2_ontology_agent.logging.metrics import MetricsCollector, write_metrics
-from sc2_ontology_agent.policy.protocol import TacticalAdvisor
+from sc2_ontology_agent.policy.protocol import (
+    ExecutionAwareAdvisor,
+    TacticalAdvisor,
+    TraceableAdvisor,
+)
 
 
 class OntologySc2Bot(BotAI):
@@ -80,6 +85,7 @@ class OntologySc2Bot(BotAI):
             if iteration % self._bot_config.decision_interval_steps != 0:
                 return
             intents = self._advisor.recommend(snapshot)
+            self._drain_strategy_events()
             for intent in intents:
                 await self._execute_and_record(snapshot, intent)
         except Exception as error:
@@ -105,8 +111,11 @@ class OntologySc2Bot(BotAI):
             intent=intent,
             execution=execution,
         )
+        if isinstance(self._advisor, ExecutionAwareAdvisor):
+            self._advisor.observe_execution(intent, execution)
+            self._drain_strategy_events()
         if (
-            intent.intent_type is IntentType.ATTACK_ENEMY_START
+            intent.intent_type in {IntentType.ATTACK_ENEMY_START, IntentType.ATTACK_ENEMY}
             and execution.status is ExecutionStatus.ACCEPTED
             and not self._attack_started
         ):
@@ -134,6 +143,21 @@ class OntologySc2Bot(BotAI):
                 intent=intent,
                 execution=execution,
             )
+
+    def _drain_strategy_events(self) -> None:
+        if not isinstance(self._advisor, TraceableAdvisor):
+            return
+        for event in self._advisor.drain_events():
+            self._record_strategy_event(event)
+
+    def _record_strategy_event(self, event: StrategyEvent) -> None:
+        self._event_logger.log(
+            event.event_type,
+            game_loop=event.game_loop,
+            game_time_seconds=event.game_time_seconds,
+            details=dict(event.details),
+        )
+        self._metrics.record_strategy_event(event)
 
     async def on_end(self, game_result: Result) -> None:
         if self._fatal_error is not None:
@@ -193,16 +217,54 @@ class OntologySc2Bot(BotAI):
     def create_snapshot(self) -> GameSnapshot:
         depots = self.structures.of_type({UnitTypeId.SUPPLYDEPOT, UnitTypeId.SUPPLYDEPOTLOWERED})
         barracks = self.structures(UnitTypeId.BARRACKS)
+        townhalls = self.structures.of_type(
+            {
+                UnitTypeId.COMMANDCENTER,
+                UnitTypeId.ORBITALCOMMAND,
+                UnitTypeId.PLANETARYFORTRESS,
+            }
+        )
+        orbitals = self.structures(UnitTypeId.ORBITALCOMMAND)
+        refineries = self.structures(UnitTypeId.REFINERY)
+        techlabs = self.structures(UnitTypeId.BARRACKSTECHLAB)
+        reactors = self.structures(UnitTypeId.BARRACKSREACTOR)
+        marauders = self.units(UnitTypeId.MARAUDER)
+        ready_townhalls = townhalls.ready
+        techlab_tags = {techlab.tag for techlab in techlabs.ready}
+        idle_barracks_techlab_count = barracks.ready.idle.filter(
+            lambda structure: structure.add_on_tag in techlab_tags
+        ).amount
+        addonless_idle_barracks_count = barracks.ready.idle.filter(
+            lambda structure: structure.add_on_tag == 0
+        ).amount
+        enemy_combat_units = self.enemy_units.filter(
+            lambda unit: unit.is_visible and not getattr(unit, "is_worker", False)
+        )
+        enemy_units_near_base = enemy_combat_units.filter(
+            lambda enemy: any(
+                enemy.distance_to(townhall) <= self._bot_config.defense_radius
+                for townhall in ready_townhalls
+            )
+        )
+        stim_pending = self.already_pending_upgrade(UpgradeId.STIMPACK) > 0
         pending_actions: list[str] = []
         pending_types = (
             (UnitTypeId.SCV, IntentType.TRAIN_WORKER),
             (UnitTypeId.SUPPLYDEPOT, IntentType.BUILD_SUPPLY),
             (UnitTypeId.BARRACKS, IntentType.BUILD_BARRACKS),
+            (UnitTypeId.REFINERY, IntentType.BUILD_REFINERY),
+            (UnitTypeId.COMMANDCENTER, IntentType.EXPAND_COMMAND_CENTER),
+            (UnitTypeId.ORBITALCOMMAND, IntentType.UPGRADE_ORBITAL),
+            (UnitTypeId.BARRACKSTECHLAB, IntentType.BUILD_TECHLAB),
+            (UnitTypeId.BARRACKSREACTOR, IntentType.BUILD_REACTOR),
             (UnitTypeId.MARINE, IntentType.TRAIN_MARINE),
+            (UnitTypeId.MARAUDER, IntentType.TRAIN_MARAUDER),
         )
         for unit_type, intent_type in pending_types:
             if self.already_pending(unit_type) > 0:
                 pending_actions.append(intent_type.value)
+        if stim_pending:
+            pending_actions.append(IntentType.RESEARCH_STIM.value)
         return GameSnapshot(
             game_loop=int(self.state.game_loop),
             game_time_seconds=float(self.time),
@@ -223,9 +285,35 @@ class OntologySc2Bot(BotAI):
             pending_marine_count=int(self.already_pending(UnitTypeId.MARINE)),
             ready_supply_depot_count=depots.ready.amount,
             ready_barracks_count=barracks.ready.amount,
-            idle_townhall_count=self.townhalls.ready.idle.amount,
+            idle_townhall_count=ready_townhalls.idle.amount,
             idle_barracks_count=barracks.ready.idle.amount,
             attack_started=self._attack_started,
+            townhall_count=townhalls.amount,
+            ready_townhall_count=ready_townhalls.amount,
+            orbital_count=orbitals.amount,
+            refinery_count=refineries.amount,
+            ready_refinery_count=refineries.ready.amount,
+            barracks_techlab_count=techlabs.amount,
+            barracks_reactor_count=reactors.amount,
+            idle_barracks_techlab_count=idle_barracks_techlab_count,
+            idle_techlab_count=techlabs.ready.idle.amount,
+            addonless_idle_barracks_count=addonless_idle_barracks_count,
+            marauder_count=marauders.amount,
+            idle_marauder_count=marauders.idle.amount,
+            pending_marauder_count=int(self.already_pending(UnitTypeId.MARAUDER)),
+            army_supply=float(self.supply_army),
+            mineral_saturation_deficit=sum(
+                townhall.ideal_harvesters - townhall.assigned_harvesters
+                for townhall in ready_townhalls
+            ),
+            gas_saturation_deficit=sum(
+                refinery.ideal_harvesters - refinery.assigned_harvesters
+                for refinery in refineries.ready
+            ),
+            enemy_combat_units_visible=enemy_combat_units.amount,
+            enemy_units_near_base=enemy_units_near_base.amount,
+            stim_researched=UpgradeId.STIMPACK in self.state.upgrades,
+            stim_pending=stim_pending,
         )
 
     def _finalize(
