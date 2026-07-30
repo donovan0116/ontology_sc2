@@ -6,6 +6,17 @@ from sc2_ontology_agent.domain.state import GameSnapshot
 from sc2_ontology_agent.policy.simple_rule_policy import SimpleRulePolicy
 
 
+def simple_config(**changes: object) -> BotConfig:
+    base = BotConfig(
+        policy="simple",
+        worker_limit=22,
+        attack_marine_threshold=10,
+        supply_buffer=4,
+        max_barracks=1,
+    )
+    return replace(base, **changes)
+
+
 def snapshot(**changes: object) -> GameSnapshot:
     base = GameSnapshot(
         game_loop=100,
@@ -34,7 +45,7 @@ def snapshot(**changes: object) -> GameSnapshot:
 
 
 def intent_types(state: GameSnapshot, config: BotConfig | None = None) -> list[IntentType]:
-    intents = SimpleRulePolicy(config or BotConfig()).recommend(state)
+    intents = SimpleRulePolicy(config or simple_config()).recommend(state)
     return [intent.intent_type for intent in intents]
 
 
@@ -91,7 +102,7 @@ def test_pending_build_prevents_duplicate_intent() -> None:
 
 
 def test_intents_are_unique_and_priority_sorted() -> None:
-    intents = SimpleRulePolicy(BotConfig()).recommend(
+    intents = SimpleRulePolicy(simple_config()).recommend(
         snapshot(idle_worker_count=1, supply_used=14, supply_cap=15)
     )
 
@@ -122,7 +133,7 @@ def test_only_one_worker_construction_is_scheduled_per_decision() -> None:
         supply_depot_count=1,
         ready_supply_depot_count=1,
     )
-    config = BotConfig(max_barracks=2)
+    config = simple_config(max_barracks=2)
 
     types = intent_types(state, config)
 
@@ -145,3 +156,19 @@ def test_no_rule_returns_idle() -> None:
         attack_started=True,
     )
     assert intent_types(state) == [IntentType.IDLE]
+
+
+def test_hierarchical_intents_and_snapshot_facts_are_available() -> None:
+    state = GameSnapshot.empty(
+        townhall_count=2,
+        refinery_count=1,
+        marauder_count=3,
+        army_supply=14.0,
+        stim_researched=True,
+    )
+
+    assert IntentType.RESEARCH_STIM.value == "RESEARCH_STIM"
+    assert IntentType.DEFEND_BASE.value == "DEFEND_BASE"
+    assert state.townhall_count == 2
+    assert state.marauder_count == 3
+    assert state.stim_researched is True

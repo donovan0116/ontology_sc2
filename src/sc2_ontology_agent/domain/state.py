@@ -30,6 +30,26 @@ class GameSnapshot:
     idle_townhall_count: int = 0
     idle_barracks_count: int = 0
     attack_started: bool = False
+    townhall_count: int = 0
+    ready_townhall_count: int = 0
+    orbital_count: int = 0
+    refinery_count: int = 0
+    ready_refinery_count: int = 0
+    barracks_techlab_count: int = 0
+    barracks_reactor_count: int = 0
+    idle_barracks_techlab_count: int = 0
+    idle_techlab_count: int = 0
+    addonless_idle_barracks_count: int = 0
+    marauder_count: int = 0
+    idle_marauder_count: int = 0
+    pending_marauder_count: int = 0
+    army_supply: float = 0.0
+    mineral_saturation_deficit: int = 0
+    gas_saturation_deficit: int = 0
+    enemy_combat_units_visible: int = 0
+    enemy_units_near_base: int = 0
+    stim_researched: bool = False
+    stim_pending: bool = False
 
     @property
     def supply_left(self) -> float:

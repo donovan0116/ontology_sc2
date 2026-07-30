@@ -33,13 +33,24 @@ class OpponentConfig:
 
 @dataclass(frozen=True, slots=True)
 class BotConfig:
-    worker_limit: int = 22
+    policy: str = "hierarchical"
+    worker_limit: int = 44
     attack_marine_threshold: int = 10
-    supply_buffer: int = 4
-    max_barracks: int = 1
+    supply_buffer: int = 6
+    max_barracks: int = 2
     decision_interval_steps: int = 4
     build_search_radius: int = 20
     building_spacing: int = 7
+    expansion_worker_threshold: int = 20
+    scout_start_time_seconds: int = 90
+    attack_army_supply: int = 24
+    reinforcement_army_supply: int = 8
+    marine_to_marauder_ratio: int = 2
+    defense_radius: int = 30
+    rally_map_fraction: float = 0.35
+    task_retry_limit: int = 3
+    task_retry_cooldown_steps: int = 2
+    task_timeout_seconds: int = 120
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +150,8 @@ def _typed(values: dict[str, object], key: str, expected: type[Any], default: An
     value = values.get(key, default)
     if expected is int and (not isinstance(value, int) or isinstance(value, bool)):
         raise ConfigError(f"{key} must be an integer")
+    if expected is float and (not isinstance(value, int | float) or isinstance(value, bool)):
+        raise ConfigError(f"{key} must be a number")
     if expected is bool and not isinstance(value, bool):
         raise ConfigError(f"{key} must be true or false")
     if expected is str and not isinstance(value, str):
@@ -215,6 +228,7 @@ def load_config(path: Path) -> AppConfig:
         root,
         "bot",
         {
+            "policy",
             "worker_limit",
             "attack_marine_threshold",
             "supply_buffer",
@@ -222,9 +236,20 @@ def load_config(path: Path) -> AppConfig:
             "decision_interval_steps",
             "build_search_radius",
             "building_spacing",
+            "expansion_worker_threshold",
+            "scout_start_time_seconds",
+            "attack_army_supply",
+            "reinforcement_army_supply",
+            "marine_to_marauder_ratio",
+            "defense_radius",
+            "rally_map_fraction",
+            "task_retry_limit",
+            "task_retry_cooldown_steps",
+            "task_timeout_seconds",
         },
     )
     bot = BotConfig(
+        policy=_typed(bot_values, "policy", str, _BOT_DEFAULTS.policy),
         worker_limit=_positive(
             _typed(bot_values, "worker_limit", int, _BOT_DEFAULTS.worker_limit),
             "worker_limit",
@@ -269,7 +294,93 @@ def load_config(path: Path) -> AppConfig:
             _typed(bot_values, "building_spacing", int, _BOT_DEFAULTS.building_spacing),
             "building_spacing",
         ),
+        expansion_worker_threshold=_positive(
+            _typed(
+                bot_values,
+                "expansion_worker_threshold",
+                int,
+                _BOT_DEFAULTS.expansion_worker_threshold,
+            ),
+            "expansion_worker_threshold",
+        ),
+        scout_start_time_seconds=_positive(
+            _typed(
+                bot_values,
+                "scout_start_time_seconds",
+                int,
+                _BOT_DEFAULTS.scout_start_time_seconds,
+            ),
+            "scout_start_time_seconds",
+            allow_zero=True,
+        ),
+        attack_army_supply=_positive(
+            _typed(
+                bot_values,
+                "attack_army_supply",
+                int,
+                _BOT_DEFAULTS.attack_army_supply,
+            ),
+            "attack_army_supply",
+        ),
+        reinforcement_army_supply=_positive(
+            _typed(
+                bot_values,
+                "reinforcement_army_supply",
+                int,
+                _BOT_DEFAULTS.reinforcement_army_supply,
+            ),
+            "reinforcement_army_supply",
+        ),
+        marine_to_marauder_ratio=_positive(
+            _typed(
+                bot_values,
+                "marine_to_marauder_ratio",
+                int,
+                _BOT_DEFAULTS.marine_to_marauder_ratio,
+            ),
+            "marine_to_marauder_ratio",
+        ),
+        defense_radius=_positive(
+            _typed(bot_values, "defense_radius", int, _BOT_DEFAULTS.defense_radius),
+            "defense_radius",
+        ),
+        rally_map_fraction=_typed(
+            bot_values,
+            "rally_map_fraction",
+            float,
+            _BOT_DEFAULTS.rally_map_fraction,
+        ),
+        task_retry_limit=_positive(
+            _typed(bot_values, "task_retry_limit", int, _BOT_DEFAULTS.task_retry_limit),
+            "task_retry_limit",
+            allow_zero=True,
+        ),
+        task_retry_cooldown_steps=_positive(
+            _typed(
+                bot_values,
+                "task_retry_cooldown_steps",
+                int,
+                _BOT_DEFAULTS.task_retry_cooldown_steps,
+            ),
+            "task_retry_cooldown_steps",
+            allow_zero=True,
+        ),
+        task_timeout_seconds=_positive(
+            _typed(
+                bot_values,
+                "task_timeout_seconds",
+                int,
+                _BOT_DEFAULTS.task_timeout_seconds,
+            ),
+            "task_timeout_seconds",
+        ),
     )
+    if bot.policy not in {"simple", "hierarchical"}:
+        raise ConfigError(f"unsupported policy: {bot.policy}")
+    if bot.policy == "hierarchical" and bot.max_barracks < 2:
+        raise ConfigError("max_barracks must be at least 2 for hierarchical policy")
+    if not 0.0 < bot.rally_map_fraction < 1.0:
+        raise ConfigError("rally_map_fraction must be between 0 and 1")
 
     experiment_values = _section(
         root,
