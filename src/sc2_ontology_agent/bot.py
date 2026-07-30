@@ -20,6 +20,13 @@ from sc2_ontology_agent.policy.protocol import (
     TraceableAdvisor,
 )
 
+_ENEMY_WORKER_TYPE_IDS = {
+    UnitTypeId.SCV,
+    UnitTypeId.PROBE,
+    UnitTypeId.DRONE,
+    UnitTypeId.DRONEBURROWED,
+}
+
 
 class OntologySc2Bot(BotAI):
     """Thin BurnySc2 lifecycle adapter for the V0.1 domain and policy."""
@@ -228,6 +235,7 @@ class OntologySc2Bot(BotAI):
         refineries = self.structures(UnitTypeId.REFINERY)
         techlabs = self.structures(UnitTypeId.BARRACKSTECHLAB)
         reactors = self.structures(UnitTypeId.BARRACKSREACTOR)
+        marines = self.units(UnitTypeId.MARINE)
         marauders = self.units(UnitTypeId.MARAUDER)
         ready_townhalls = townhalls.ready
         techlab_tags = {techlab.tag for techlab in techlabs.ready}
@@ -238,7 +246,7 @@ class OntologySc2Bot(BotAI):
             lambda structure: structure.add_on_tag == 0
         ).amount
         enemy_combat_units = self.enemy_units.filter(
-            lambda unit: unit.is_visible and not getattr(unit, "is_worker", False)
+            lambda unit: unit.is_visible and unit.type_id not in _ENEMY_WORKER_TYPE_IDS
         )
         enemy_units_near_base = enemy_combat_units.filter(
             lambda enemy: any(
@@ -273,14 +281,14 @@ class OntologySc2Bot(BotAI):
             supply_used=float(self.supply_used),
             supply_cap=float(self.supply_cap),
             worker_count=self.workers.amount,
-            marine_count=self.units(UnitTypeId.MARINE).amount,
+            marine_count=marines.amount,
             barracks_count=barracks.amount,
             supply_depot_count=depots.amount,
             enemy_units_visible=self.enemy_units.amount,
             enemy_structures_visible=self.enemy_structures.amount,
             pending_actions=tuple(pending_actions),
             idle_worker_count=self.workers.idle.amount,
-            idle_marine_count=self.units(UnitTypeId.MARINE).idle.amount,
+            idle_marine_count=marines.idle.amount,
             pending_worker_count=int(self.already_pending(UnitTypeId.SCV)),
             pending_marine_count=int(self.already_pending(UnitTypeId.MARINE)),
             ready_supply_depot_count=depots.ready.amount,
@@ -301,7 +309,7 @@ class OntologySc2Bot(BotAI):
             marauder_count=marauders.amount,
             idle_marauder_count=marauders.idle.amount,
             pending_marauder_count=int(self.already_pending(UnitTypeId.MARAUDER)),
-            army_supply=float(self.supply_army),
+            army_supply=float(marines.amount + 2 * marauders.amount),
             mineral_saturation_deficit=sum(
                 townhall.ideal_harvesters - townhall.assigned_harvesters
                 for townhall in ready_townhalls

@@ -52,16 +52,16 @@ class FakeUnit:
         *,
         add_on_tag: int = 0,
         tag: int = 0,
+        type_id: UnitTypeId = UnitTypeId.MARINE,
         visible: bool = True,
-        worker: bool = False,
         nearby: bool = False,
         ideal_harvesters: int = 0,
         assigned_harvesters: int = 0,
     ) -> None:
         self.add_on_tag = add_on_tag
         self.tag = tag
+        self.type_id = type_id
         self.is_visible = visible
-        self.is_worker = worker
         self._nearby = nearby
         self.ideal_harvesters = ideal_harvesters
         self.assigned_harvesters = assigned_harvesters
@@ -142,12 +142,15 @@ class FakeSnapshotBot:
         self._marines = FakeGroup(7, idle_amount=3)
         self._marauders = FakeGroup(3, idle_amount=1)
         self.enemy_units = FakeGroup(
-            4,
+            7,
             items=(
                 FakeUnit(nearby=True),
                 FakeUnit(nearby=True),
                 FakeUnit(nearby=False),
-                FakeUnit(worker=True, nearby=True),
+                FakeUnit(type_id=UnitTypeId.SCV, nearby=True),
+                FakeUnit(type_id=UnitTypeId.PROBE, nearby=True),
+                FakeUnit(type_id=UnitTypeId.DRONE, nearby=True),
+                FakeUnit(type_id=UnitTypeId.DRONEBURROWED, nearby=True),
             ),
         )
         self.enemy_structures = FakeGroup(1)
@@ -160,7 +163,7 @@ class FakeSnapshotBot:
         self.vespene = 0
         self.supply_used = 23
         self.supply_cap = 31
-        self.supply_army = 13.0
+        self.supply_army = 99.0
         self._bot_config = SimpleNamespace(defense_radius=30)
         self._attack_started = False
 
@@ -232,3 +235,16 @@ def test_create_snapshot_exports_only_serializable_domain_values() -> None:
     assert all(
         isinstance(value, int | float | bool | tuple) for value in snapshot.to_dict().values()
     )
+
+
+def test_create_snapshot_excludes_enemy_worker_types_from_combat_facts() -> None:
+    snapshot = OntologySc2Bot.create_snapshot(cast(Any, FakeSnapshotBot()))
+
+    assert snapshot.enemy_combat_units_visible == 3
+    assert snapshot.enemy_units_near_base == 2
+
+
+def test_create_snapshot_derives_bio_supply_without_global_army_supply() -> None:
+    snapshot = OntologySc2Bot.create_snapshot(cast(Any, FakeSnapshotBot()))
+
+    assert snapshot.army_supply == 13.0
