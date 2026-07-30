@@ -21,24 +21,34 @@ class SimpleExecutor:
         if intent.intent_type is IntentType.ATTACK_ENEMY_START:
             reinforcement = intent.parameters.get("reinforcement", False) is True
             return await self._attack_enemy_start(reinforcement)
+        if intent.intent_type is IntentType.DISTRIBUTE_WORKERS:
+            return await self._distribute_workers(intent.parameters.get("resource_priority"))
         handlers = {
-            IntentType.DISTRIBUTE_WORKERS: self._distribute_workers,
             IntentType.TRAIN_WORKER: self._train_worker,
             IntentType.BUILD_SUPPLY: self._build_supply,
             IntentType.BUILD_BARRACKS: self._build_barracks,
+            IntentType.BUILD_REFINERY: self._build_refinery,
+            IntentType.EXPAND_COMMAND_CENTER: self._expand_command_center,
+            IntentType.BUILD_TECHLAB: self._build_techlab,
+            IntentType.BUILD_REACTOR: self._build_reactor,
             IntentType.TRAIN_MARINE: self._train_marine,
             IntentType.IDLE: self._idle,
         }
         return await handlers[intent.intent_type]()
 
-    async def _distribute_workers(self) -> ExecutionResult:
+    async def _distribute_workers(self, resource_priority: object | None = None) -> ExecutionResult:
         if not self._bot.workers:
             return ExecutionResult(ExecutionStatus.REJECTED, "no_workers")
         if not self._bot.workers.idle:
             return ExecutionResult(ExecutionStatus.WAITING, "no_idle_workers")
         if not self._bot.townhalls.ready or not self._bot.mineral_field:
             return ExecutionResult(ExecutionStatus.REJECTED, "mining_prerequisite_missing")
-        await self._bot.distribute_workers()
+        if resource_priority == "gas":
+            await self._bot.distribute_workers(resource_ratio=1.5)
+        elif resource_priority == "minerals":
+            await self._bot.distribute_workers(resource_ratio=2.0)
+        else:
+            await self._bot.distribute_workers()
         return ExecutionResult(ExecutionStatus.ACCEPTED)
 
     async def _train_worker(self) -> ExecutionResult:
@@ -61,6 +71,30 @@ class SimpleExecutor:
         if not depots.ready:
             return ExecutionResult(ExecutionStatus.REJECTED, "supply_depot_prerequisite_missing")
         return await self._build_structure(UnitTypeId.BARRACKS)
+
+    async def _build_refinery(self) -> ExecutionResult:
+        if not self._bot.townhalls.ready:
+            return ExecutionResult(ExecutionStatus.REJECTED, "no_ready_townhall")
+        townhall = self._bot.townhalls.ready.first
+        geysers = self._bot.vespene_geyser.closer_than(15, townhall)
+        available = geysers.filter(
+            lambda geyser: not self._bot.gas_buildings.closer_than(1.0, geyser)
+        )
+        if not available:
+            return ExecutionResult(ExecutionStatus.REJECTED, "no_free_geyser")
+        return await self._build_at(UnitTypeId.REFINERY, available.closest_to(townhall))
+
+    async def _expand_command_center(self) -> ExecutionResult:
+        expansion = await self._bot.get_next_expansion()
+        if expansion is None:
+            return ExecutionResult(ExecutionStatus.FAILED, "expansion_location_not_found")
+        return await self._build_at(UnitTypeId.COMMANDCENTER, expansion)
+
+    async def _build_techlab(self) -> ExecutionResult:
+        return self._build_addon(UnitTypeId.BARRACKSTECHLAB)
+
+    async def _build_reactor(self) -> ExecutionResult:
+        return self._build_addon(UnitTypeId.BARRACKSREACTOR)
 
     async def _build_structure(self, unit_type: UnitTypeId) -> ExecutionResult:
         if not self._bot.can_afford(unit_type):
@@ -85,6 +119,26 @@ class SimpleExecutor:
             return ExecutionResult(ExecutionStatus.FAILED, "build_worker_not_found")
         command = worker.build(unit_type, placement)
         return self._command_result(command, "build_command_rejected")
+
+    async def _build_at(self, unit_type: UnitTypeId, location: Point2 | Unit) -> ExecutionResult:
+        if not self._bot.can_afford(unit_type):
+            return ExecutionResult(ExecutionStatus.WAITING, "insufficient_resources")
+        worker = self._bot.select_build_worker(location)
+        if worker is None:
+            return ExecutionResult(ExecutionStatus.FAILED, "build_worker_not_found")
+        command = worker.build(unit_type, location)
+        return self._command_result(command, "build_command_rejected")
+
+    def _build_addon(self, unit_type: UnitTypeId) -> ExecutionResult:
+        if not self._bot.can_afford(unit_type):
+            return ExecutionResult(ExecutionStatus.WAITING, "insufficient_resources")
+        barracks = self._bot.structures(UnitTypeId.BARRACKS).ready.idle.filter(
+            lambda structure: structure.add_on_tag == 0
+        )
+        if not barracks:
+            return ExecutionResult(ExecutionStatus.WAITING, "addonless_barracks_unavailable")
+        command = barracks.first.build(unit_type)
+        return self._command_result(command, "addon_command_rejected")
 
     async def _train_marine(self) -> ExecutionResult:
         if self._bot.supply_left < 1:
