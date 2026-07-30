@@ -16,6 +16,7 @@ class FakeUnit:
         idle: bool = True,
         add_on_tag: int = 0,
         visible: bool = True,
+        surplus_harvesters: int = 0,
     ) -> None:
         self.tag = tag
         self.position = position
@@ -23,6 +24,7 @@ class FakeUnit:
         self.is_idle = idle
         self.add_on_tag = add_on_tag
         self.is_visible = visible
+        self.surplus_harvesters = surplus_harvesters
         self.is_carrying_minerals = False
         self.is_carrying_vespene = False
         self.builds: list[tuple[object, object | None]] = []
@@ -31,6 +33,7 @@ class FakeUnit:
         self.abilities: list[object] = []
         self.moves: list[object] = []
         self.targets: list[object] = []
+        self.gathers: list[object] = []
 
     def build(self, unit_type: object, position: object | None = None) -> object:
         self.builds.append((unit_type, position))
@@ -54,6 +57,10 @@ class FakeUnit:
 
     def attack(self, target: object) -> object:
         self.targets.append(target)
+        return object()
+
+    def gather(self, target: object) -> object:
+        self.gathers.append(target)
         return object()
 
     def distance_to(self, target: FakeUnit | Point2) -> float:

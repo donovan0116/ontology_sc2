@@ -43,6 +43,11 @@ class SimpleExecutor:
             return ExecutionResult(ExecutionStatus.WAITING, "no_idle_workers")
         if not self._bot.townhalls.ready or not self._bot.mineral_field:
             return ExecutionResult(ExecutionStatus.REJECTED, "mining_prerequisite_missing")
+        target = self._priority_gather_target(resource_priority)
+        if target is not None:
+            worker = self._bot.workers.idle.closest_to(target)
+            command = worker.gather(target)
+            return self._command_result(command, "gather_command_rejected")
         if resource_priority == "gas":
             await self._bot.distribute_workers(resource_ratio=1.5)
         elif resource_priority == "minerals":
@@ -50,6 +55,25 @@ class SimpleExecutor:
         else:
             await self._bot.distribute_workers()
         return ExecutionResult(ExecutionStatus.ACCEPTED)
+
+    def _priority_gather_target(self, resource_priority: object) -> Unit | None:
+        worker = self._bot.workers.idle.first
+        if resource_priority == "gas":
+            refineries = self._bot.gas_buildings.ready.filter(
+                lambda refinery: refinery.surplus_harvesters < 0
+            )
+            return refineries.closest_to(worker) if refineries else None
+        if resource_priority == "minerals":
+            townhalls = self._bot.townhalls.ready.filter(
+                lambda townhall: townhall.surplus_harvesters < 0
+            )
+            if not townhalls:
+                return None
+            mineral_fields = self._bot.mineral_field.filter(
+                lambda mineral: any(mineral.distance_to(townhall) <= 8 for townhall in townhalls)
+            )
+            return mineral_fields.closest_to(worker) if mineral_fields else None
+        return None
 
     async def _train_worker(self) -> ExecutionResult:
         if self._bot.supply_left < 1:

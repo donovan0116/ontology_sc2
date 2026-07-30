@@ -171,6 +171,59 @@ def test_distribution_uses_requested_resource_priority(
     assert bot.distribution_ratios == [resource_ratio]
 
 
+def priority_distribution_bot() -> tuple[ExecutorFakeBot, FakeUnit, FakeUnit, FakeUnit]:
+    bot = ExecutorFakeBot()
+    townhall = FakeUnit(10, Point2((0, 0)), surplus_harvesters=-1)
+    refinery = FakeUnit(20, Point2((20, 0)), surplus_harvesters=-1)
+    mineral_patch = FakeUnit(30, Point2((2, 0)))
+    bot.townhalls = FakeGroup([townhall])
+    bot.gas_buildings = FakeGroup([refinery])
+    bot.mineral_field = FakeGroup([mineral_patch])
+    return bot, bot.worker, refinery, mineral_patch
+
+
+def test_gas_distribution_routes_eligible_worker_to_refinery_deficit() -> None:
+    bot, worker, refinery, _ = priority_distribution_bot()
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(
+        executor.execute(
+            MacroIntent(
+                IntentType.DISTRIBUTE_WORKERS,
+                80,
+                "gas_deficit",
+                100,
+                {"resource_priority": "gas"},
+            )
+        )
+    )
+
+    assert result.status is ExecutionStatus.ACCEPTED
+    assert worker.gathers == [refinery]
+    assert bot.distribution_ratios == []
+
+
+def test_mineral_distribution_routes_eligible_worker_to_mineral_deficit() -> None:
+    bot, worker, _, mineral_patch = priority_distribution_bot()
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(
+        executor.execute(
+            MacroIntent(
+                IntentType.DISTRIBUTE_WORKERS,
+                80,
+                "mineral_deficit",
+                100,
+                {"resource_priority": "minerals"},
+            )
+        )
+    )
+
+    assert result.status is ExecutionStatus.ACCEPTED
+    assert worker.gathers == [mineral_patch]
+    assert bot.distribution_ratios == []
+
+
 def test_build_refinery_selects_free_geyser_and_worker() -> None:
     bot = ExecutorFakeBot()
     bot.townhalls = FakeGroup([FakeUnit(10, Point2((0, 0)))])
