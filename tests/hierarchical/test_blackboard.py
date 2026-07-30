@@ -35,6 +35,27 @@ def test_accepted_build_task_completes_when_snapshot_reaches_target(
     assert blackboard.tasks[goal.key].state is TaskState.COMPLETED
 
 
+def test_completed_task_does_not_emit_duplicate_completion_event(
+    blackboard: StrategicBlackboard,
+) -> None:
+    goal = ProductionGoal(
+        key="build:first_barracks",
+        intent_type=IntentType.BUILD_BARRACKS,
+        completion_field="barracks_count",
+        completion_target=1,
+    )
+    blackboard.ensure_task(goal)
+
+    blackboard.update(make_snapshot(game_loop=120, barracks_count=1))
+    blackboard.drain_events()
+    blackboard.update(make_snapshot(game_loop=124, barracks_count=1))
+
+    assert not any(
+        event.event_type == "task_state_changed" and event.details["task_key"] == goal.key
+        for event in blackboard.drain_events()
+    )
+
+
 def test_waiting_task_honors_retry_cooldown(
     blackboard: StrategicBlackboard,
 ) -> None:

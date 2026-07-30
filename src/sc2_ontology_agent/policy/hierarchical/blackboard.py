@@ -39,7 +39,10 @@ class StrategicBlackboard:
         self.snapshot = snapshot
         for key, record in tuple(self.tasks.items()):
             observed = getattr(snapshot, record.goal.completion_field)
-            if observed >= record.goal.completion_target:
+            if (
+                record.state is not TaskState.COMPLETED
+                and observed >= record.goal.completion_target
+            ):
                 self._transition(key, TaskState.COMPLETED, "completion_fact_observed")
             elif (
                 record.state is TaskState.ACCEPTED
