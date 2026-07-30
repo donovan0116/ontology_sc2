@@ -1,4 +1,4 @@
-# V0.1 架构
+# V0.2 架构
 
 ## 总体数据流
 
@@ -6,7 +6,7 @@
 flowchart TD
     SC2[python-sc2 observation] --> Adapter[OntologySc2Bot snapshot adapter]
     Adapter --> Snapshot[GameSnapshot]
-    Snapshot --> Advisor[TacticalAdvisor]
+    Snapshot --> Advisor[Policy factory -> TacticalAdvisor]
     Advisor --> Intents[MacroIntent list]
     Intents --> Executor[SimpleExecutor]
     Executor --> Actions[python-sc2 actions]
@@ -42,12 +42,29 @@ flowchart TD
 def recommend(self, snapshot: GameSnapshot) -> list[MacroIntent]: ...
 ```
 
-`SimpleRulePolicy` 是 V0.1 默认实现。它产生有限 `IntentType`、优先级、原因、创建
-game loop 和少量标量参数。候选意图按优先级排序、按类型去重，并使用保守矿物/人口
-预算避免同一步的资源冲突。`pending_actions` 防止重复建造或训练。
+`policy.factory.create_advisor(config: BotConfig) -> TacticalAdvisor` 在每场游戏创建一个
+独立 advisor。`hierarchical` 是默认值；`simple` 保留为 V0.1 规则的消融选项。后者产生
+有限 `IntentType`、优先级、原因、创建 game loop 和少量标量参数，仍可用于基线比较。
+
+默认的 `HierarchicalRulePolicy` 先更新 `StrategicBlackboard`，再调用生产与战斗两个
+上层策略控制器。它们通过黑板协调 Economy、Construction、Production、Technology、
+Scout、Combat 六个 Manager；Manager 提交候选 `MacroIntent`，`CommandScheduler` 统一
+按紧急性、优先级、任务状态和资源/气体/人口/建造工人/生产设施预算仲裁。它不会把
+BurnySc2 对象带入领域层。
+
+除 `TacticalAdvisor.recommend()` 外，策略可选实现 `ExecutionAwareAdvisor`，接收每个
+意图的执行结果以维护有限重试、冷却、超时和重新规划；也可实现
+`TraceableAdvisor.drain_events()`，将领域事件交给日志与指标层。只实现 `recommend()`
+的 simple 与本体 stub 保持兼容。分层状态仅属于一场游戏的 advisor，因此 batch 会为
+每局重新创建 advisor。
+
+当前唯一分层策略是两基地 Marine/Marauder Stim：补给、气矿、扩张、两个 Barracks 和
+addon、Stim、约 2:1 的部队生产、SCV 侦察、基地防守、集结、主力进攻和增援。它不是
+论文的 Zerg/PySC2 实验或结果复现；不包含本体推理、学习、多种族、多套策略、高级单位
+组合、反隐或逐单位微操，也不承诺胜率。
 
 `OntologyAdvisorStub` 只证明替换接口存在，默认返回空列表，不安装或调用任何
-RDF/OWL 组件。
+RDF/OWL 组件；这些 V0.3 工作尚未实现。
 
 ## 执行器
 
@@ -83,4 +100,3 @@ RDF/OWL 组件。
 表达。本体更适合回答“扩产、侦察、进攻或防守”等语义层问题。让本体只输出受限
 `MacroIntent`，再由经过验证的执行层处理资源、位置和 API 细节，可解释性、可测试性
 和安全边界都更清楚。
-

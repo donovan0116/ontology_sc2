@@ -19,7 +19,7 @@ from sc2_ontology_agent.config import AppConfig, ConfigError, save_config, valid
 from sc2_ontology_agent.environment import discover_sc2_install, map_exists
 from sc2_ontology_agent.logging.event_logger import EventLogger
 from sc2_ontology_agent.logging.metrics import MetricsCollector
-from sc2_ontology_agent.policy.simple_rule_policy import SimpleRulePolicy
+from sc2_ontology_agent.policy.factory import create_advisor
 
 MetricsDocument = dict[str, Any]
 SingleRunner = Callable[[AppConfig, str | None], MetricsDocument]
@@ -73,7 +73,7 @@ def run_single_game(config: AppConfig, run_id: str | None = None) -> MetricsDocu
         bot_config=config.bot,
         game_config=config.game,
         logging_config=config.logging,
-        advisor=SimpleRulePolicy(config.bot),
+        advisor=create_advisor(config.bot),
         event_logger=event_logger,
         metrics=metrics_collector,
         metrics_path=run_directory / "metrics.json",

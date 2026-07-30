@@ -26,10 +26,18 @@ def test_missing_sc2_writes_clear_single_run_failure_artifacts(
         lambda: (None, None),
         raising=False,
     )
+    advisor_configs: list[object] = []
+
+    def create_advisor(config: object) -> object:
+        advisor_configs.append(config)
+        return object()
+
+    monkeypatch.setattr("sc2_ontology_agent.runner.create_advisor", create_advisor)
 
     with pytest.raises(GameRunError, match="StarCraft II installation not found") as captured:
         run_single_game(config, "missing-sc2")
 
+    assert advisor_configs == [config.bot]
     run_directory = config.experiment.output_root / "missing-sc2"
     assert captured.value.run_id == "missing-sc2"
     assert (run_directory / "config.yaml").is_file()

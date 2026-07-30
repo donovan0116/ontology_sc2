@@ -23,13 +23,18 @@
 | `run_id` | 对局唯一 ID |
 | `game_loop` | SC2 game loop |
 | `game_time_seconds` | 游戏内秒数 |
-| `event_type` | `game_start`、`snapshot`、`rule_trigger`、`decision`、`action_failure`、`first_attack`、`game_end` 或 `exception` |
+| `event_type` | `game_start`、`snapshot`、`rule_trigger`、`decision`、`action_failure`、`first_attack`、`game_end`、`exception`，以及分层策略事件 |
 | `snapshot` | 当时的可序列化 `GameSnapshot`，存在观察时写入 |
 | `intent` | 类型、优先级、原因、创建 loop 和参数 |
 | `execution` | `accepted/waiting/rejected/failed` 与可选原因 |
 | `details` | 事件特有的标量信息 |
 
 `event_log_enabled: false` 时不创建该文件，其他工件不受影响。
+
+分层策略还会记录 `strategy_phase_changed`、`combat_mode_changed`、`command_proposed`、
+`command_scheduled`、`command_suppressed`、`task_state_changed` 和 `strategy_replanned`。
+这些事件的 `details` 包含阶段/模式、Manager、任务键、优先级、预算、抑制原因、尝试
+次数或状态转换原因；它们是解释 scheduler 仲裁和执行反馈的领域证据。
 
 ### `metrics.json`
 
@@ -50,6 +55,10 @@
 | `first_attack_time` | 首次接受攻击命令的游戏内秒数，否则 `null` |
 | `exception` | 失败类型和消息，否则 `null` |
 | `replay_path` | 计划的回放路径；失败时该文件可能不存在 |
+| `production_phase_reached` | 达到的最远生产阶段（分层策略可选字段） |
+| `first_scout_time_seconds` / `first_expansion_time_seconds` | 首次接受侦察或扩张的游戏内秒数（可选） |
+| `stim_completed_time_seconds` / `first_defense_time_seconds` | Stim 完成或首次防守的游戏内秒数（可选） |
+| `task_failure_count` / `command_suppression_count` | 任务失败和 scheduler 抑制次数（可选） |
 
 Supply block 是离散观察区间近似，误差上界受 `game_step` 和 bot 回调频率影响，不能把它
 解释为逐 loop 的精确指标。`accepted` 表示命令提交给 BurnySc2，不等于建筑或单位
@@ -70,4 +79,3 @@ Supply block 是离散观察区间近似，误差上界受 `game_step` 和 bot �
 `batch-summary.json` 包含请求局数、已完成局数、成功/失败数、胜/负/平、成功局平均游戏
 时长、异常列表和每局摘要。每局结束后都会更新一次。平均时长只使用 runner 正常返回
 的对局；失败局的最后观察时长仍保留在其 `metrics.json`，但不混入该平均值。
-

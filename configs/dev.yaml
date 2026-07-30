@@ -12,13 +12,24 @@ opponent:
   difficulty: Easy
 
 bot:
-  worker_limit: 22
+  policy: hierarchical
+  worker_limit: 44
   attack_marine_threshold: 10
-  supply_buffer: 4
-  max_barracks: 1
+  supply_buffer: 6
+  max_barracks: 2
   decision_interval_steps: 4
   build_search_radius: 20
   building_spacing: 7
+  expansion_worker_threshold: 20
+  scout_start_time_seconds: 90
+  attack_army_supply: 24
+  reinforcement_army_supply: 8
+  marine_to_marauder_ratio: 2
+  defense_radius: 30
+  rally_map_fraction: 0.35
+  task_retry_limit: 3
+  task_retry_cooldown_steps: 2
+  task_timeout_seconds: 120
 
 experiment:
   run_name: dev
@@ -31,4 +42,3 @@ logging:
   event_log_enabled: true
   snapshot_interval_steps: 16
   log_level: INFO
-

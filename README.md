@@ -2,16 +2,26 @@
 
 `ontology-sc2-agent` 是一个面向 StarCraft II 完整智能体研究的实验工程。长期目标是让
 本体系统根据游戏状态推荐高层战术，再由可解释的分层规则智能体执行。当前版本
-**V0.1** 只验证最小完整链路，不包含 RDF、OWL、知识图谱或本体推理。
+**V0.2** 默认启用分层规则智能体；不包含 RDF、OWL、知识图谱或本体推理。
 
-## V0.1 能做什么
+## V0.2 能做什么
 
-Terran 智能体会分配空闲工人、在上限内训练 SCV、补 Supply Depot、建 Barracks、
-持续训练 Marine，并在 Marine 达到阈值后攻击敌方出生点。每场对局保存生效配置、
-JSONL 事件、JSON 指标；配置允许时同时保存 `SC2Replay`。单局与顺序批量实验均有
-独立 run ID，失败会留下诊断文件，不会覆盖已经完成的对局。
+默认的 `hierarchical` 策略在黑板上协调两层策略控制器（生产、战斗）与 Economy、
+Construction、Production、Technology、Scout、Combat 六个 Manager。统一 scheduler
+会预留资源、人口、建造工人和生产设施，避免同一步的冲突，并通过可选执行反馈和
+可追踪事件协议维护任务重试、超时和重新规划。
 
-这不是高胜率 bot：没有气矿、扩张、维修、科技、侦察管理或微操。
+其唯一完整策略是两基地 Marine/Marauder Stim 时机进攻：持续生产 SCV、补给、气矿、
+扩张、Barracks addon 和 Stim；定时 SCV 侦察，受袭时防守，集结后主力进攻，并按阈值
+补充增援。每场对局保存生效配置、JSONL 事件、JSON 指标；配置允许时同时保存
+`SC2Replay`。单局与顺序批量实验均有独立 run ID，失败会留下诊断文件，不会覆盖已经
+完成的对局。
+
+`simple` 仍可通过 `bot.policy: simple` 选择，作为 V0.1 简化规则的消融基线；它只包含
+SCV、Supply Depot、Barracks、Marine 和 Marine 阈值进攻。本项目是针对
+Terran/BurnySc2 的架构适配，不是论文中 Zerg 实验结果的复现，也不承诺任何 AI 难度
+上的胜率。非目标包括 RDF/OWL 推理、强化/模仿学习、多种族、多套 Terran 策略、
+Medivac/Tank/空军、隐形侦测和高级逐单位微操。
 
 ## 环境要求
 
@@ -69,7 +79,7 @@ YAML 中：
 
 - `game`：地图、实时模式、`game_step` 和是否保存回放；
 - `player` / `opponent`：种族和内置 AI 难度；V0.1 玩家只允许 Terran；
-- `bot`：工人上限、进攻阈值、人口缓冲、Barracks 上限、决策间隔和建造搜索参数；
+- `bot`：策略选择和全部策略阈值，见下表；
 - `experiment`：run 名、局数、输出目录、回放目录和失败后是否继续；
 - `logging`：事件开关、快照间隔与日志级别。
 
@@ -77,6 +87,27 @@ YAML 中：
 `true/false`。每场开始前会把所有默认值合并后的实际配置写入该局 `config.yaml`。
 `run_name` 只能包含字母、数字、点、下划线和连字符。相对输出路径以执行命令时的
 当前目录为基准。`logging.log_level` 会应用到 BurnySc2 使用的 Loguru logger。
+
+| `bot` 键 | 默认值 | 作用 |
+|---|---:|---|
+| `policy` | `hierarchical` | 默认分层策略；`simple` 是消融基线 |
+| `worker_limit` | 44 | SCV 生产上限 |
+| `attack_marine_threshold` | 10 | `simple` 的首次 Marine 进攻阈值 |
+| `supply_buffer` | 6 | 补 Supply Depot 的人口余量 |
+| `max_barracks` | 2 | Barracks 数量上限 |
+| `decision_interval_steps` | 4 | 策略决策间隔（bot step） |
+| `build_search_radius` | 20 | 执行层建造位置搜索半径 |
+| `building_spacing` | 7 | 执行层建筑间距 |
+| `expansion_worker_threshold` | 20 | 开始扩张所需 SCV 数 |
+| `scout_start_time_seconds` | 90 | 首次 SCV 侦察时间 |
+| `attack_army_supply` | 24 | 主力进攻的 army supply 阈值 |
+| `reinforcement_army_supply` | 8 | 增援加入进攻的 army supply 阈值 |
+| `marine_to_marauder_ratio` | 2 | 目标 Marine:Marauder 比例 |
+| `defense_radius` | 30 | 快照统计基地附近敌军的半径 |
+| `rally_map_fraction` | 0.35 | 主基地至敌方出生点连线上的集结比例 |
+| `task_retry_limit` | 3 | 领域任务最大重试次数 |
+| `task_retry_cooldown_steps` | 2 | 重试前的决策周期冷却 |
+| `task_timeout_seconds` | 120 | accepted 任务确认完成的最长游戏内秒数 |
 
 ## 检查环境
 
@@ -172,11 +203,11 @@ RUN_SC2_INTEGRATION=1 pytest -m integration -v
 
 ## 已知限制
 
-- 只支持 Terran 和单一最小策略，未验证多地图泛化。
+- 只支持 Terran 和单一分层生产/战斗策略，未验证多地图泛化。
 - Supply block 时长来自相邻观察的区间近似，不是逐 game loop 精确积分。
 - 可见敌人计数采用 BurnySc2 当前观察集合，战争迷雾中的历史信息语义受上游 API 影响。
 - 不设强制对局时限；极端僵局需要手动停止，已完成局的工件仍会保留。
-- V0.1 没有本体逻辑；`OntologyAdvisorStub` 默认返回空推荐且不参与正常运行。
+- V0.3 前没有本体逻辑；`OntologyAdvisorStub` 默认返回空推荐且不参与正常运行。
 
 架构边界见 [architecture.md](docs/architecture.md)，后续路线见
 [roadmap.md](docs/roadmap.md)。
