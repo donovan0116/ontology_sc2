@@ -65,9 +65,19 @@ class CommandScheduler:
                 producer_capacity,
             )
             if reason is not None:
-                self._emit_suppressed(blackboard, candidate, reason)
+                self._emit_suppressed(
+                    blackboard,
+                    candidate,
+                    reason,
+                    available_minerals,
+                    available_vespene,
+                    available_supply,
+                )
                 continue
 
+            available_before_minerals = available_minerals
+            available_before_vespene = available_vespene
+            available_before_supply = available_supply
             selected.append(candidate.intent)
             seen.add((candidate.intent.intent_type, candidate.task_key))
             available_minerals -= candidate.mineral_cost
@@ -75,12 +85,26 @@ class CommandScheduler:
             available_supply -= candidate.supply_cost
             worker_reserved = worker_reserved or candidate.uses_build_worker
             self._reserve_producer(candidate.producer, producer_capacity)
-            if candidate.task_key in blackboard.tasks:
-                blackboard.mark_scheduled(candidate.task_key)
+            attempts = (
+                blackboard.mark_scheduled(candidate.task_key).attempts
+                if candidate.task_key in blackboard.tasks
+                else None
+            )
             blackboard.emit(
                 "command_scheduled",
                 task_key=candidate.task_key,
                 intent_type=candidate.intent.intent_type.value,
+                priority=candidate.intent.priority,
+                mineral_cost=candidate.mineral_cost,
+                vespene_cost=candidate.vespene_cost,
+                supply_cost=candidate.supply_cost,
+                available_minerals=available_before_minerals,
+                available_vespene=available_before_vespene,
+                available_supply=available_before_supply,
+                remaining_minerals=available_minerals,
+                remaining_vespene=available_vespene,
+                remaining_supply=available_supply,
+                attempts=attempts,
             )
 
         if selected:
@@ -177,10 +201,25 @@ class CommandScheduler:
         blackboard: StrategicBlackboard,
         candidate: CandidateIntent,
         reason: str,
+        available_minerals: int,
+        available_vespene: int,
+        available_supply: float,
     ) -> None:
         blackboard.emit(
             "command_suppressed",
             task_key=candidate.task_key,
             intent_type=candidate.intent.intent_type.value,
+            priority=candidate.intent.priority,
+            mineral_cost=candidate.mineral_cost,
+            vespene_cost=candidate.vespene_cost,
+            supply_cost=candidate.supply_cost,
+            available_minerals=available_minerals,
+            available_vespene=available_vespene,
+            available_supply=available_supply,
             reason=reason,
+            attempts=(
+                blackboard.tasks[candidate.task_key].attempts
+                if candidate.task_key in blackboard.tasks
+                else None
+            ),
         )

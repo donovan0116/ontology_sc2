@@ -22,6 +22,12 @@ class CombatManager:
 
         snapshot = board.snapshot
         emergency = board.combat_mode is CombatMode.DEFEND
+        if (
+            board.combat_mode is CombatMode.ATTACK
+            and board.attack_started
+            and snapshot.army_supply < board.config.reinforcement_army_supply
+        ):
+            return []
         parameters = (
             {"reinforcement": board.attack_started}
             if board.combat_mode is CombatMode.ATTACK

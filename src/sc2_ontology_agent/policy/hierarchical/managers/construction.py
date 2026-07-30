@@ -27,7 +27,16 @@ class ConstructionManager:
         candidates: list[CandidateIntent] = []
         current = _current_goal(board)
         supply_pressure = board.snapshot.supply_left <= board.config.supply_buffer
-        if current is not None and current.intent_type in _BUILD_COSTS:
+        expansion_waiting_for_workers = (
+            current is not None
+            and current.intent_type is IntentType.EXPAND_COMMAND_CENTER
+            and board.snapshot.worker_count < board.config.expansion_worker_threshold
+        )
+        if (
+            current is not None
+            and current.intent_type in _BUILD_COSTS
+            and not expansion_waiting_for_workers
+        ):
             candidates.append(
                 self._goal_candidate(
                     board,

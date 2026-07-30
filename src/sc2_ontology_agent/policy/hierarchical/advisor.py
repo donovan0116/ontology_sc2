@@ -48,6 +48,18 @@ class HierarchicalRulePolicy:
                     task_key=item.task_key,
                     source_manager=str(item.intent.parameters["source_manager"]),
                     intent_type=item.intent.intent_type.value,
+                    priority=item.intent.priority,
+                    mineral_cost=item.mineral_cost,
+                    vespene_cost=item.vespene_cost,
+                    supply_cost=item.supply_cost,
+                    uses_build_worker=item.uses_build_worker,
+                    producer=item.producer.value if item.producer is not None else None,
+                    emergency=item.emergency,
+                    attempts=(
+                        self.blackboard.tasks[item.task_key].attempts
+                        if item.task_key in self.blackboard.tasks
+                        else None
+                    ),
                 )
         return self._scheduler.select(snapshot, candidates, self.blackboard)
 

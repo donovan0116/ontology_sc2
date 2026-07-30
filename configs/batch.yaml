@@ -16,7 +16,7 @@ bot:
   worker_limit: 44
   attack_marine_threshold: 10
   supply_buffer: 6
-  max_barracks: 2
+  max_barracks: 2  # Used only by the simple-policy ablation; hierarchical builds two.
   decision_interval_steps: 4
   build_search_radius: 20
   building_spacing: 7

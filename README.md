@@ -94,7 +94,7 @@ YAML 中：
 | `worker_limit` | 44 | SCV 生产上限 |
 | `attack_marine_threshold` | 10 | `simple` 的首次 Marine 进攻阈值 |
 | `supply_buffer` | 6 | 补 Supply Depot 的人口余量 |
-| `max_barracks` | 2 | Barracks 数量上限 |
+| `max_barracks` | 2 | 仅 `simple` 的 Barracks 数量上限；`hierarchical` 固定按建造顺序建造两座，不把它作为调参项 |
 | `decision_interval_steps` | 4 | 策略决策间隔（bot step） |
 | `build_search_radius` | 20 | 执行层建造位置搜索半径 |
 | `building_spacing` | 7 | 执行层建筑间距 |

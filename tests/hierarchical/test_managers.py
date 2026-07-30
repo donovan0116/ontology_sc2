@@ -2,7 +2,13 @@ import pytest
 
 from sc2_ontology_agent.domain.intent import IntentType
 from sc2_ontology_agent.policy.hierarchical.combat_strategy import CombatStrategy
-from sc2_ontology_agent.policy.hierarchical.commands import CandidateIntent, ProducerKind
+from sc2_ontology_agent.policy.hierarchical.commands import (
+    CandidateIntent,
+    CombatMode,
+    ProducerKind,
+    ProductionPhase,
+    TaskState,
+)
 from sc2_ontology_agent.policy.hierarchical.managers.combat import CombatManager
 from sc2_ontology_agent.policy.hierarchical.managers.construction import ConstructionManager
 from sc2_ontology_agent.policy.hierarchical.managers.economy import EconomyManager
@@ -87,6 +93,39 @@ def test_construction_prioritizes_the_first_depot_when_supply_is_low(blackboard)
     assert candidate.intent.priority == 90
 
 
+def test_construction_waits_for_worker_threshold_before_expansion(blackboard) -> None:
+    ProductionStrategy().update(blackboard)
+    before_threshold = make_snapshot(
+        supply_depot_count=1,
+        barracks_count=1,
+        refinery_count=1,
+        orbital_count=1,
+        townhall_count=1,
+        worker_count=blackboard.config.expansion_worker_threshold - 1,
+    )
+    blackboard.update(before_threshold)
+
+    assert ConstructionManager().propose(blackboard) == []
+    assert blackboard.tasks["build:expansion"].state is TaskState.PLANNED
+    assert blackboard.tasks["build:second_barracks"].state is TaskState.PLANNED
+
+    blackboard.update(
+        make_snapshot(
+            supply_depot_count=1,
+            barracks_count=1,
+            refinery_count=1,
+            orbital_count=1,
+            townhall_count=1,
+            worker_count=blackboard.config.expansion_worker_threshold,
+        )
+    )
+
+    candidates = ConstructionManager().propose(blackboard)
+
+    assert types(candidates) == [IntentType.EXPAND_COMMAND_CENTER]
+    assert candidates[0].task_key == "build:expansion"
+
+
 @pytest.mark.parametrize(
     "marine_count,marauder_count,expected",
     [
@@ -165,6 +204,40 @@ def test_combat_defense_has_emergency_candidate(blackboard) -> None:
 
     assert candidate.intent.intent_type is IntentType.DEFEND_BASE
     assert candidate.emergency is True
+
+
+def test_combat_waits_for_reinforcement_supply_after_first_attack(blackboard) -> None:
+    blackboard.combat_mode = CombatMode.ATTACK
+    blackboard.attack_started = True
+    blackboard.update(make_snapshot(army_supply=blackboard.config.reinforcement_army_supply - 1))
+
+    assert CombatManager().propose(blackboard) == []
+
+    blackboard.update(make_snapshot(army_supply=blackboard.config.reinforcement_army_supply))
+    candidate = CombatManager().propose(blackboard)[0]
+
+    assert candidate.intent.intent_type is IntentType.ATTACK_ENEMY
+    assert candidate.intent.parameters["reinforcement"] is True
+
+
+def test_combat_first_attack_remains_governed_by_attack_phase_threshold(blackboard) -> None:
+    strategy = CombatStrategy()
+    production_strategy = ProductionStrategy()
+    blackboard.production_phase = ProductionPhase.MUSTER
+    blackboard.update(make_snapshot(army_supply=blackboard.config.attack_army_supply - 1))
+    production_strategy.update(blackboard)
+    strategy.update(blackboard)
+
+    assert blackboard.combat_mode is CombatMode.RALLY
+
+    blackboard.update(make_snapshot(army_supply=blackboard.config.attack_army_supply))
+    production_strategy.update(blackboard)
+    strategy.update(blackboard)
+    candidate = CombatManager().propose(blackboard)[0]
+
+    assert blackboard.combat_mode is CombatMode.ATTACK
+    assert candidate.intent.intent_type is IntentType.ATTACK_ENEMY
+    assert candidate.intent.parameters["reinforcement"] is False
 
 
 def test_all_manager_candidates_include_scalar_task_metadata(blackboard) -> None:

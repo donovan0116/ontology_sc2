@@ -31,10 +31,20 @@
 
 `event_log_enabled: false` 时不创建该文件，其他工件不受影响。
 
-分层策略还会记录 `strategy_phase_changed`、`combat_mode_changed`、`command_proposed`、
-`command_scheduled`、`command_suppressed`、`task_state_changed` 和 `strategy_replanned`。
-这些事件的 `details` 包含阶段/模式、Manager、任务键、优先级、预算、抑制原因、尝试
-次数或状态转换原因；它们是解释 scheduler 仲裁和执行反馈的领域证据。
+分层策略事件的 `details` schema 如下；值始终是字符串、数字、布尔值或 `null`，没有
+BurnySc2 对象。scheduler 中的 `available_*` 是处理该候选项之前的剩余预算，
+`remaining_*` 是接受该候选项之后的预算。`attempts` 是关联任务当前的尝试次数；没有
+关联任务的命令事件写 `null`。
+
+| `event_type` | `details` 键 |
+|---|---|
+| `strategy_phase_changed` | `phase` |
+| `combat_mode_changed` | `mode`, `reason` |
+| `command_proposed` | `task_key`, `source_manager`, `intent_type`, `priority`, `mineral_cost`, `vespene_cost`, `supply_cost`, `uses_build_worker`, `producer`, `emergency`, `attempts` |
+| `command_scheduled` | `task_key`, `intent_type`, `priority`, `mineral_cost`, `vespene_cost`, `supply_cost`, `available_minerals`, `available_vespene`, `available_supply`, `remaining_minerals`, `remaining_vespene`, `remaining_supply`, `attempts` |
+| `command_suppressed` | `task_key`, `intent_type`, `priority`, `mineral_cost`, `vespene_cost`, `supply_cost`, `available_minerals`, `available_vespene`, `available_supply`, `reason`, `attempts` |
+| `task_state_changed` | `task_key`, `previous_state`, `state`, `reason`, `attempts` |
+| `strategy_replanned` | `task_key`, `reason`, `attempts` |
 
 ### `metrics.json`
 

@@ -51,7 +51,7 @@ class StrategicBlackboard:
                 > self.config.task_timeout_seconds
             ):
                 self._transition(key, TaskState.TIMED_OUT, "task_timeout")
-                self.emit("strategy_replanned", task_key=key, reason="task_timeout")
+                self._emit_replanned(key, "task_timeout")
 
     def ensure_task(self, goal: ProductionGoal) -> TaskRecord:
         if goal.key not in self.tasks:
@@ -126,7 +126,7 @@ class StrategicBlackboard:
                 replacement_used=True,
                 accepted_time_seconds=None,
             )
-            self.emit("strategy_replanned", task_key=key, reason="task_retry_exhausted")
+            self._emit_replanned(key, "task_retry_exhausted")
             return
         self._transition(key, TaskState.FAILED, record.reason)
 
@@ -158,6 +158,15 @@ class StrategicBlackboard:
             previous_state=previous.state.value,
             state=state.value,
             reason=reason,
+            attempts=self.tasks[key].attempts,
+        )
+
+    def _emit_replanned(self, key: str, reason: str) -> None:
+        self.emit(
+            "strategy_replanned",
+            task_key=key,
+            reason=reason,
+            attempts=self.tasks[key].attempts,
         )
 
     def emit(self, event_type: str, **details: StrategyEventValue) -> None:
