@@ -58,11 +58,11 @@ class FakeUnit:
 
     def move(self, target: object) -> object:
         self.moves.append(target)
-        return object()
+        return self.command_result
 
     def attack(self, target: object) -> object:
         self.targets.append(target)
-        return object()
+        return self.command_result
 
     def gather(self, target: object) -> object:
         self.gathers.append(target)
