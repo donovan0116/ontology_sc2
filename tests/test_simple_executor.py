@@ -6,7 +6,9 @@ from typing import Any, cast
 import pytest
 from executor_fakes import ExecutorFakeBot, FakeGroup, FakeTypedCollection, FakeUnit
 from sc2.bot_ai import BotAI
+from sc2.ids.ability_id import AbilityId
 from sc2.ids.unit_typeid import UnitTypeId
+from sc2.ids.upgrade_id import UpgradeId
 from sc2.position import Point2
 
 from sc2_ontology_agent.config import BotConfig
@@ -275,3 +277,80 @@ def test_addon_intent_uses_addonless_idle_barracks(
 
     assert result.status is ExecutionStatus.ACCEPTED
     assert bot.barracks.builds == [(unit_type, None)]
+
+
+def test_orbital_upgrade_uses_idle_command_center() -> None:
+    bot = ExecutorFakeBot()
+    bot.command_center = FakeUnit(10, Point2((0, 0)))
+    bot.structures = FakeTypedCollection(
+        {
+            UnitTypeId.COMMANDCENTER: FakeGroup([bot.command_center]),
+        }
+    )
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(
+        executor.execute(
+            MacroIntent(
+                IntentType.UPGRADE_ORBITAL,
+                70,
+                "orbital",
+                100,
+            )
+        )
+    )
+
+    assert result.status is ExecutionStatus.ACCEPTED
+    assert bot.command_center.abilities == [AbilityId.UPGRADETOORBITAL_ORBITALCOMMAND]
+
+
+def test_stim_research_uses_idle_techlab() -> None:
+    bot = ExecutorFakeBot()
+    bot.techlab = FakeUnit(40, Point2((6, 0)))
+    bot.structures = FakeTypedCollection(
+        {
+            UnitTypeId.BARRACKSTECHLAB: FakeGroup([bot.techlab]),
+        }
+    )
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(
+        executor.execute(
+            MacroIntent(
+                IntentType.RESEARCH_STIM,
+                70,
+                "stim",
+                100,
+            )
+        )
+    )
+
+    assert result.status is ExecutionStatus.ACCEPTED
+    assert bot.techlab.researched == [UpgradeId.STIMPACK]
+
+
+def test_marauder_requires_idle_barracks_with_techlab() -> None:
+    bot = ExecutorFakeBot()
+    bot.structures = FakeTypedCollection(
+        {
+            UnitTypeId.BARRACKS: FakeGroup([FakeUnit(30, Point2((4, 0)))]),
+            UnitTypeId.BARRACKSTECHLAB: FakeGroup(),
+        }
+    )
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(
+        executor.execute(
+            MacroIntent(
+                IntentType.TRAIN_MARAUDER,
+                60,
+                "bio_ratio",
+                100,
+            )
+        )
+    )
+
+    assert result == ExecutionResult(
+        ExecutionStatus.REJECTED,
+        "techlab_barracks_missing",
+    )

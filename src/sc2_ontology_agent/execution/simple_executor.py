@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from sc2.bot_ai import BotAI
+from sc2.ids.ability_id import AbilityId
 from sc2.ids.unit_typeid import UnitTypeId
+from sc2.ids.upgrade_id import UpgradeId
 from sc2.position import Point2
 from sc2.unit import Unit
 
@@ -31,7 +33,10 @@ class SimpleExecutor:
             IntentType.EXPAND_COMMAND_CENTER: self._expand_command_center,
             IntentType.BUILD_TECHLAB: self._build_techlab,
             IntentType.BUILD_REACTOR: self._build_reactor,
+            IntentType.UPGRADE_ORBITAL: self._upgrade_orbital,
+            IntentType.RESEARCH_STIM: self._research_stim,
             IntentType.TRAIN_MARINE: self._train_marine,
+            IntentType.TRAIN_MARAUDER: self._train_marauder,
             IntentType.IDLE: self._idle,
         }
         return await handlers[intent.intent_type]()
@@ -174,6 +179,52 @@ class SimpleExecutor:
             return ExecutionResult(ExecutionStatus.WAITING, "insufficient_resources")
         command = barracks.first.train(UnitTypeId.MARINE)
         return self._command_result(command, "train_marine_command_rejected")
+
+    async def _upgrade_orbital(self) -> ExecutionResult:
+        command_centers = self._bot.structures(UnitTypeId.COMMANDCENTER)
+        if not command_centers:
+            return ExecutionResult(ExecutionStatus.REJECTED, "command_center_missing")
+        idle_command_centers = command_centers.ready.idle
+        if not idle_command_centers:
+            return ExecutionResult(ExecutionStatus.WAITING, "command_center_busy_or_unavailable")
+        if not self._bot.can_afford(UnitTypeId.ORBITALCOMMAND):
+            return ExecutionResult(ExecutionStatus.WAITING, "insufficient_resources")
+        command = idle_command_centers.first(AbilityId.UPGRADETOORBITAL_ORBITALCOMMAND)
+        return self._command_result(command, "upgrade_orbital_command_rejected")
+
+    async def _research_stim(self) -> ExecutionResult:
+        if getattr(self._bot, "already_pending_upgrade", lambda _upgrade: 0)(UpgradeId.STIMPACK):
+            return ExecutionResult(ExecutionStatus.REJECTED, "stim_already_pending")
+        techlabs = self._bot.structures(UnitTypeId.BARRACKSTECHLAB)
+        if not techlabs.ready:
+            return ExecutionResult(ExecutionStatus.REJECTED, "techlab_missing")
+        idle_techlabs = techlabs.ready.idle
+        if not idle_techlabs:
+            return ExecutionResult(ExecutionStatus.WAITING, "techlab_busy_or_unavailable")
+        if not self._bot.can_afford(UpgradeId.STIMPACK):
+            return ExecutionResult(ExecutionStatus.WAITING, "insufficient_resources")
+        command = idle_techlabs.first.research(UpgradeId.STIMPACK)
+        return self._command_result(command, "research_stim_command_rejected")
+
+    async def _train_marauder(self) -> ExecutionResult:
+        techlab_tags = {
+            techlab.tag for techlab in self._bot.structures(UnitTypeId.BARRACKSTECHLAB).ready
+        }
+        ready_barracks = self._bot.structures(UnitTypeId.BARRACKS).ready
+        techlab_barracks = ready_barracks.filter(
+            lambda barracks: barracks.add_on_tag in techlab_tags
+        )
+        if not techlab_barracks:
+            return ExecutionResult(ExecutionStatus.REJECTED, "techlab_barracks_missing")
+        if self._bot.supply_left < 2:
+            return ExecutionResult(ExecutionStatus.WAITING, "supply_blocked")
+        idle_techlab_barracks = techlab_barracks.idle
+        if not idle_techlab_barracks:
+            return ExecutionResult(ExecutionStatus.WAITING, "techlab_barracks_busy_or_unavailable")
+        if not self._bot.can_afford(UnitTypeId.MARAUDER):
+            return ExecutionResult(ExecutionStatus.WAITING, "insufficient_resources")
+        command = idle_techlab_barracks.first.train(UnitTypeId.MARAUDER)
+        return self._command_result(command, "train_marauder_command_rejected")
 
     async def _attack_enemy_start(self, reinforcement: bool) -> ExecutionResult:
         all_marines = self._bot.units(UnitTypeId.MARINE)
