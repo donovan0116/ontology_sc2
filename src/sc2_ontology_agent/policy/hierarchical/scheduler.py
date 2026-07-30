@@ -33,7 +33,10 @@ class CommandScheduler:
             ProducerKind.BARRACKS: snapshot.idle_barracks_count,
             ProducerKind.ADDONLESS_BARRACKS: snapshot.addonless_idle_barracks_count,
             ProducerKind.TECHLAB_BARRACKS: snapshot.idle_barracks_techlab_count,
-            ProducerKind.TECHLAB: snapshot.idle_techlab_count,
+            ProducerKind.TECHLAB: max(
+                snapshot.idle_techlab_count,
+                snapshot.idle_barracks_techlab_count,
+            ),
         }
         selected: list[MacroIntent] = []
         worker_reserved = False
