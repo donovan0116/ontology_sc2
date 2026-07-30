@@ -193,7 +193,7 @@ class SimpleExecutor:
         return self._command_result(command, "upgrade_orbital_command_rejected")
 
     async def _research_stim(self) -> ExecutionResult:
-        if getattr(self._bot, "already_pending_upgrade", lambda _upgrade: 0)(UpgradeId.STIMPACK):
+        if self._bot.already_pending_upgrade(UpgradeId.STIMPACK):
             return ExecutionResult(ExecutionStatus.REJECTED, "stim_already_pending")
         techlabs = self._bot.structures(UnitTypeId.BARRACKSTECHLAB)
         if not techlabs.ready:

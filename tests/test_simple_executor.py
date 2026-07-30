@@ -354,3 +354,157 @@ def test_marauder_requires_idle_barracks_with_techlab() -> None:
         ExecutionStatus.REJECTED,
         "techlab_barracks_missing",
     )
+
+
+def techlab_barracks_bot(
+    *,
+    barracks_idle: bool = True,
+    command_result: object = True,
+) -> tuple[ExecutorFakeBot, FakeUnit]:
+    bot = ExecutorFakeBot()
+    techlab = FakeUnit(40, Point2((6, 0)))
+    barracks = FakeUnit(
+        30,
+        Point2((4, 0)),
+        idle=barracks_idle,
+        add_on_tag=techlab.tag,
+        command_result=command_result,
+    )
+    bot.structures = FakeTypedCollection(
+        {
+            UnitTypeId.BARRACKS: FakeGroup([barracks]),
+            UnitTypeId.BARRACKSTECHLAB: FakeGroup([techlab]),
+        }
+    )
+    return bot, barracks
+
+
+def marauder_intent() -> MacroIntent:
+    return MacroIntent(IntentType.TRAIN_MARAUDER, 60, "bio_ratio", 100)
+
+
+def stim_intent() -> MacroIntent:
+    return MacroIntent(IntentType.RESEARCH_STIM, 70, "stim", 100)
+
+
+def orbital_intent() -> MacroIntent:
+    return MacroIntent(IntentType.UPGRADE_ORBITAL, 70, "orbital", 100)
+
+
+def test_marauder_trains_from_matching_idle_techlab_barracks() -> None:
+    bot, barracks = techlab_barracks_bot()
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(executor.execute(marauder_intent()))
+
+    assert result.status is ExecutionStatus.ACCEPTED
+    assert barracks.trained == [UnitTypeId.MARAUDER]
+
+
+def test_marauder_waits_when_matching_techlab_barracks_is_busy() -> None:
+    bot, barracks = techlab_barracks_bot(barracks_idle=False)
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(executor.execute(marauder_intent()))
+
+    assert result == ExecutionResult(
+        ExecutionStatus.WAITING,
+        "techlab_barracks_busy_or_unavailable",
+    )
+    assert barracks.trained == []
+
+
+@pytest.mark.parametrize("pending_progress", [0.5, 1.0])
+def test_stim_research_rejects_pending_or_completed_upgrade(pending_progress: float) -> None:
+    bot = ExecutorFakeBot()
+    techlab = FakeUnit(40, Point2((6, 0)))
+    bot.structures = FakeTypedCollection({UnitTypeId.BARRACKSTECHLAB: FakeGroup([techlab])})
+    bot.pending_upgrades[UpgradeId.STIMPACK] = pending_progress
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(executor.execute(stim_intent()))
+
+    assert result == ExecutionResult(ExecutionStatus.REJECTED, "stim_already_pending")
+    assert techlab.researched == []
+
+
+def test_orbital_upgrade_waits_for_resources() -> None:
+    bot = ExecutorFakeBot()
+    command_center = FakeUnit(10, Point2((0, 0)))
+    bot.structures = FakeTypedCollection({UnitTypeId.COMMANDCENTER: FakeGroup([command_center])})
+    bot.affordable = False
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(executor.execute(orbital_intent()))
+
+    assert result == ExecutionResult(ExecutionStatus.WAITING, "insufficient_resources")
+    assert command_center.abilities == []
+
+
+def test_stim_research_waits_for_resources() -> None:
+    bot = ExecutorFakeBot()
+    techlab = FakeUnit(40, Point2((6, 0)))
+    bot.structures = FakeTypedCollection({UnitTypeId.BARRACKSTECHLAB: FakeGroup([techlab])})
+    bot.affordable = False
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(executor.execute(stim_intent()))
+
+    assert result == ExecutionResult(ExecutionStatus.WAITING, "insufficient_resources")
+    assert techlab.researched == []
+
+
+def test_marauder_waits_when_supply_is_blocked() -> None:
+    bot, barracks = techlab_barracks_bot()
+    bot.supply_left = 1
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(executor.execute(marauder_intent()))
+
+    assert result == ExecutionResult(ExecutionStatus.WAITING, "supply_blocked")
+    assert barracks.trained == []
+
+
+def test_marauder_waits_for_resources() -> None:
+    bot, barracks = techlab_barracks_bot()
+    bot.affordable = False
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(executor.execute(marauder_intent()))
+
+    assert result == ExecutionResult(ExecutionStatus.WAITING, "insufficient_resources")
+    assert barracks.trained == []
+
+
+def test_orbital_upgrade_fails_when_command_is_rejected() -> None:
+    bot = ExecutorFakeBot()
+    command_center = FakeUnit(10, Point2((0, 0)), command_result=False)
+    bot.structures = FakeTypedCollection({UnitTypeId.COMMANDCENTER: FakeGroup([command_center])})
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(executor.execute(orbital_intent()))
+
+    assert result == ExecutionResult(ExecutionStatus.FAILED, "upgrade_orbital_command_rejected")
+    assert command_center.abilities == [AbilityId.UPGRADETOORBITAL_ORBITALCOMMAND]
+
+
+def test_stim_research_fails_when_command_is_rejected() -> None:
+    bot = ExecutorFakeBot()
+    techlab = FakeUnit(40, Point2((6, 0)), command_result=False)
+    bot.structures = FakeTypedCollection({UnitTypeId.BARRACKSTECHLAB: FakeGroup([techlab])})
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(executor.execute(stim_intent()))
+
+    assert result == ExecutionResult(ExecutionStatus.FAILED, "research_stim_command_rejected")
+    assert techlab.researched == [UpgradeId.STIMPACK]
+
+
+def test_marauder_training_fails_when_command_is_rejected() -> None:
+    bot, barracks = techlab_barracks_bot(command_result=False)
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(executor.execute(marauder_intent()))
+
+    assert result == ExecutionResult(ExecutionStatus.FAILED, "train_marauder_command_rejected")
+    assert barracks.trained == [UnitTypeId.MARAUDER]

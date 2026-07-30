@@ -3,7 +3,10 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from types import SimpleNamespace
 
+from sc2.ids.upgrade_id import UpgradeId
 from sc2.position import Point2
+
+_ACCEPTED_COMMAND = object()
 
 
 class FakeUnit:
@@ -17,6 +20,7 @@ class FakeUnit:
         add_on_tag: int = 0,
         visible: bool = True,
         surplus_harvesters: int = 0,
+        command_result: object = _ACCEPTED_COMMAND,
     ) -> None:
         self.tag = tag
         self.position = position
@@ -27,6 +31,7 @@ class FakeUnit:
         self.surplus_harvesters = surplus_harvesters
         self.is_carrying_minerals = False
         self.is_carrying_vespene = False
+        self.command_result = command_result
         self.builds: list[tuple[object, object | None]] = []
         self.trained: list[object] = []
         self.researched: list[object] = []
@@ -37,19 +42,19 @@ class FakeUnit:
 
     def build(self, unit_type: object, position: object | None = None) -> object:
         self.builds.append((unit_type, position))
-        return object()
+        return self.command_result
 
     def train(self, unit_type: object) -> object:
         self.trained.append(unit_type)
-        return object()
+        return self.command_result
 
     def research(self, upgrade: object) -> object:
         self.researched.append(upgrade)
-        return object()
+        return self.command_result
 
     def __call__(self, ability: object) -> object:
         self.abilities.append(ability)
-        return object()
+        return self.command_result
 
     def move(self, target: object) -> object:
         self.moves.append(target)
@@ -140,9 +145,15 @@ class ExecutorFakeBot:
         self.game_info = SimpleNamespace(map_center=Point2((50, 50)))
         self.next_expansion: Point2 | None = Point2((20, 0))
         self.distribution_ratios: list[float] = []
+        self.supply_left = 200
+        self.affordable = True
+        self.pending_upgrades: dict[UpgradeId, float] = {}
 
-    def can_afford(self, _item: object) -> bool:
-        return True
+    def can_afford(self, _item: object, check_supply_cost: bool = True) -> bool:
+        return self.affordable
+
+    def already_pending_upgrade(self, upgrade_type: UpgradeId) -> float:
+        return self.pending_upgrades.get(upgrade_type, 0)
 
     def select_build_worker(self, _position: object) -> FakeUnit | None:
         return self.worker
