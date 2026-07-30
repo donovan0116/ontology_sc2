@@ -3,6 +3,8 @@
 .pytest_cache/
 .ruff_cache/
 .venv/
+.worktrees/
+.superpowers/
 __pycache__/
 *.egg-info/
 *.py[cod]
@@ -12,4 +14,3 @@ runs/*
 !runs/.gitkeep
 replays/*
 !replays/.gitkeep
-
