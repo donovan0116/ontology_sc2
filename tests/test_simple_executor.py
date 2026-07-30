@@ -128,6 +128,115 @@ def test_reinforcement_attack_commands_only_idle_marines() -> None:
     assert busy_marine.targets == []
 
 
+def test_scout_moves_one_worker_to_enemy_start() -> None:
+    bot = ExecutorFakeBot()
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(
+        executor.execute(
+            MacroIntent(
+                IntentType.SCOUT_ENEMY_START,
+                30,
+                "scout_window",
+                100,
+            )
+        )
+    )
+
+    assert result.status is ExecutionStatus.ACCEPTED
+    assert bot.worker.moves == [bot.enemy_start]
+
+
+def test_rally_moves_only_idle_bio_units_to_staging_point() -> None:
+    bot = ExecutorFakeBot()
+    home = FakeUnit(10, Point2((0, 0)))
+    bot.townhalls = FakeGroup([home])
+    bot.idle_marine = FakeUnit(50, Point2((1, 0)))
+    bot.busy_marauder = FakeUnit(51, Point2((1, 1)), idle=False)
+    bot.units = FakeTypedCollection(
+        {
+            UnitTypeId.MARINE: FakeGroup([bot.idle_marine]),
+            UnitTypeId.MARAUDER: FakeGroup([bot.busy_marauder]),
+        }
+    )
+    bot.expected_rally = Point2((35, 0))
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig(rally_map_fraction=0.35))
+
+    result = asyncio.run(
+        executor.execute(
+            MacroIntent(
+                IntentType.RALLY_ARMY,
+                50,
+                "muster",
+                100,
+            )
+        )
+    )
+
+    assert result.status is ExecutionStatus.ACCEPTED
+    assert bot.idle_marine.moves == [bot.expected_rally]
+    assert bot.busy_marauder.moves == []
+
+
+def test_defense_targets_enemy_closest_to_ready_townhall() -> None:
+    bot = ExecutorFakeBot()
+    home = FakeUnit(10, Point2((0, 0)))
+    bot.townhalls = FakeGroup([home])
+    bot.marine = FakeUnit(50, Point2((1, 0)))
+    bot.units = FakeTypedCollection(
+        {
+            UnitTypeId.MARINE: FakeGroup([bot.marine]),
+        }
+    )
+    bot.closest_threat = FakeUnit(70, Point2((5, 0)))
+    far_threat = FakeUnit(71, Point2((20, 0)))
+    bot.enemy_units = FakeGroup([far_threat, bot.closest_threat])
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(
+        executor.execute(
+            MacroIntent(
+                IntentType.DEFEND_BASE,
+                100,
+                "base_threat",
+                100,
+            )
+        )
+    )
+
+    assert result.status is ExecutionStatus.ACCEPTED
+    assert bot.marine.targets == [bot.closest_threat]
+
+
+def test_hierarchical_attack_uses_idle_reinforcements_after_first_wave() -> None:
+    bot = ExecutorFakeBot()
+    bot.idle_marine = FakeUnit(50, Point2((1, 0)))
+    bot.busy_marauder = FakeUnit(51, Point2((1, 1)), idle=False)
+    bot.units = FakeTypedCollection(
+        {
+            UnitTypeId.MARINE: FakeGroup([bot.idle_marine]),
+            UnitTypeId.MARAUDER: FakeGroup([bot.busy_marauder]),
+        }
+    )
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(
+        executor.execute(
+            MacroIntent(
+                IntentType.ATTACK_ENEMY,
+                60,
+                "reinforcement",
+                100,
+                {"reinforcement": True},
+            )
+        )
+    )
+
+    assert result.status is ExecutionStatus.ACCEPTED
+    assert bot.idle_marine.targets == [bot.enemy_start]
+    assert bot.busy_marauder.targets == []
+
+
 def test_distribution_is_rejected_without_ready_townhall() -> None:
     bot = FakeDistributionBot()
     executor = SimpleExecutor(cast(BotAI, bot), BotConfig())

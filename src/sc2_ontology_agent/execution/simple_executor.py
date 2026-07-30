@@ -6,6 +6,7 @@ from sc2.ids.unit_typeid import UnitTypeId
 from sc2.ids.upgrade_id import UpgradeId
 from sc2.position import Point2
 from sc2.unit import Unit
+from sc2.units import Units
 
 from sc2_ontology_agent.config import BotConfig
 from sc2_ontology_agent.domain.intent import IntentType, MacroIntent
@@ -23,6 +24,9 @@ class SimpleExecutor:
         if intent.intent_type is IntentType.ATTACK_ENEMY_START:
             reinforcement = intent.parameters.get("reinforcement", False) is True
             return await self._attack_enemy_start(reinforcement)
+        if intent.intent_type is IntentType.ATTACK_ENEMY:
+            reinforcement = intent.parameters.get("reinforcement", False) is True
+            return await self._attack_enemy(reinforcement)
         if intent.intent_type is IntentType.DISTRIBUTE_WORKERS:
             return await self._distribute_workers(intent.parameters.get("resource_priority"))
         handlers = {
@@ -37,6 +41,9 @@ class SimpleExecutor:
             IntentType.RESEARCH_STIM: self._research_stim,
             IntentType.TRAIN_MARINE: self._train_marine,
             IntentType.TRAIN_MARAUDER: self._train_marauder,
+            IntentType.SCOUT_ENEMY_START: self._scout_enemy_start,
+            IntentType.RALLY_ARMY: self._rally_army,
+            IntentType.DEFEND_BASE: self._defend_base,
             IntentType.IDLE: self._idle,
         }
         return await handlers[intent.intent_type]()
@@ -226,6 +233,62 @@ class SimpleExecutor:
         command = idle_techlab_barracks.first.train(UnitTypeId.MARAUDER)
         return self._command_result(command, "train_marauder_command_rejected")
 
+    async def _scout_enemy_start(self) -> ExecutionResult:
+        workers = self._bot.workers.filter(
+            lambda worker: not worker.is_carrying_minerals and not worker.is_carrying_vespene
+        )
+        if not workers:
+            return ExecutionResult(ExecutionStatus.REJECTED, "no_scout_worker")
+        if not self._bot.enemy_start_locations:
+            return ExecutionResult(ExecutionStatus.FAILED, "enemy_start_location_unknown")
+        idle_workers = workers.idle
+        worker = idle_workers.first if idle_workers else workers.first
+        command = worker.move(self._bot.enemy_start_locations[0])
+        return self._command_result(command, "scout_command_rejected")
+
+    async def _rally_army(self) -> ExecutionResult:
+        if not self._bot.townhalls.ready:
+            return ExecutionResult(ExecutionStatus.REJECTED, "no_ready_townhall")
+        if not self._bot.enemy_start_locations:
+            return ExecutionResult(ExecutionStatus.FAILED, "enemy_start_location_unknown")
+        bio_units = self._bio_units().idle
+        if not bio_units:
+            return ExecutionResult(ExecutionStatus.WAITING, "no_idle_bio_units")
+        home = self._bot.townhalls.ready.first
+        enemy_start = self._bot.enemy_start_locations[0]
+        rally = home.position.towards(
+            enemy_start,
+            home.distance_to(enemy_start) * self._config.rally_map_fraction,
+        )
+        issued = sum(unit.move(rally) is not False for unit in bio_units)
+        if issued == 0:
+            return ExecutionResult(ExecutionStatus.FAILED, "rally_commands_rejected")
+        return ExecutionResult(ExecutionStatus.ACCEPTED)
+
+    async def _defend_base(self) -> ExecutionResult:
+        townhalls = self._bot.townhalls.ready
+        if not townhalls:
+            return ExecutionResult(ExecutionStatus.REJECTED, "no_ready_townhall")
+        threats = self._bot.enemy_units.filter(
+            lambda enemy: enemy.is_visible
+            and any(
+                enemy.distance_to(townhall) <= self._config.defense_radius for townhall in townhalls
+            )
+        )
+        if not threats:
+            return ExecutionResult(ExecutionStatus.WAITING, "no_visible_threats")
+        bio_units = self._bio_units()
+        if not bio_units:
+            return ExecutionResult(ExecutionStatus.REJECTED, "no_bio_units")
+        target = min(
+            threats,
+            key=lambda enemy: min(enemy.distance_to(townhall) for townhall in townhalls),
+        )
+        issued = sum(unit.attack(target) is not False for unit in bio_units)
+        if issued == 0:
+            return ExecutionResult(ExecutionStatus.FAILED, "defense_commands_rejected")
+        return ExecutionResult(ExecutionStatus.ACCEPTED)
+
     async def _attack_enemy_start(self, reinforcement: bool) -> ExecutionResult:
         all_marines = self._bot.units(UnitTypeId.MARINE)
         if not all_marines:
@@ -248,6 +311,32 @@ class SimpleExecutor:
         if issued == 0:
             return ExecutionResult(ExecutionStatus.FAILED, "attack_commands_rejected")
         return ExecutionResult(ExecutionStatus.ACCEPTED)
+
+    async def _attack_enemy(self, reinforcement: bool) -> ExecutionResult:
+        all_bio_units = self._bio_units()
+        if not all_bio_units:
+            return ExecutionResult(ExecutionStatus.REJECTED, "no_bio_units")
+        bio_units = all_bio_units.idle if reinforcement else all_bio_units
+        if not bio_units:
+            return ExecutionResult(ExecutionStatus.WAITING, "no_idle_reinforcements")
+        visible_structures = self._bot.enemy_structures.filter(lambda unit: unit.is_visible)
+        target: Unit | Point2
+        if visible_structures:
+            target = visible_structures.closest_to(bio_units.center)
+        elif self._bot.enemy_start_locations:
+            target = self._bot.enemy_start_locations[0]
+        else:
+            return ExecutionResult(ExecutionStatus.FAILED, "enemy_start_location_unknown")
+        issued = 0
+        for unit in bio_units:
+            if unit.attack(target) is not False:
+                issued += 1
+        if issued == 0:
+            return ExecutionResult(ExecutionStatus.FAILED, "attack_commands_rejected")
+        return ExecutionResult(ExecutionStatus.ACCEPTED)
+
+    def _bio_units(self) -> Units:
+        return self._bot.units.of_type({UnitTypeId.MARINE, UnitTypeId.MARAUDER})
 
     async def _idle(self) -> ExecutionResult:
         return ExecutionResult(ExecutionStatus.WAITING, "no_action")
