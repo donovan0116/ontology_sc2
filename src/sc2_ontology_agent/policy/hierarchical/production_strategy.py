@@ -1,4 +1,5 @@
 from sc2_ontology_agent.domain.intent import IntentType
+from sc2_ontology_agent.domain.tech_tree import STIM_VESPENE_COST
 from sc2_ontology_agent.policy.hierarchical.blackboard import StrategicBlackboard
 from sc2_ontology_agent.policy.hierarchical.commands import (
     ProductionGoal,
@@ -44,7 +45,7 @@ class ProductionStrategy:
         snapshot = board.snapshot
         board.resource_priority = (
             ResourcePriority.GAS
-            if snapshot.ready_refinery_count > 0 and snapshot.vespene < 100
+            if (snapshot.ready_refinery_count > 0 and snapshot.vespene < STIM_VESPENE_COST)
             else ResourcePriority.MINERALS
         )
 

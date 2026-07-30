@@ -1,6 +1,13 @@
+import pytest
+
+from sc2_ontology_agent.domain.tech_tree import STIM_VESPENE_COST
 from sc2_ontology_agent.policy.hierarchical.blackboard import StrategicBlackboard
 from sc2_ontology_agent.policy.hierarchical.combat_strategy import CombatStrategy
-from sc2_ontology_agent.policy.hierarchical.commands import CombatMode, ProductionPhase
+from sc2_ontology_agent.policy.hierarchical.commands import (
+    CombatMode,
+    ProductionPhase,
+    ResourcePriority,
+)
 from sc2_ontology_agent.policy.hierarchical.production_strategy import ProductionStrategy
 
 from .conftest import make_snapshot
@@ -74,6 +81,30 @@ def test_production_strategy_advances_all_phases(
         blackboard.update(snapshot)
         strategy.update(blackboard)
         assert blackboard.production_phase is expected
+
+
+@pytest.mark.parametrize(
+    ("vespene", "expected_priority"),
+    [
+        (STIM_VESPENE_COST - 1, ResourcePriority.GAS),
+        (STIM_VESPENE_COST, ResourcePriority.MINERALS),
+    ],
+)
+def test_production_strategy_prioritizes_gas_until_stim_cost_is_available(
+    blackboard: StrategicBlackboard,
+    vespene: int,
+    expected_priority: ResourcePriority,
+) -> None:
+    blackboard.update(
+        make_snapshot(
+            ready_refinery_count=1,
+            vespene=vespene,
+        )
+    )
+
+    ProductionStrategy().update(blackboard)
+
+    assert blackboard.resource_priority is expected_priority
 
 
 def test_combat_strategy_defense_preempts_and_then_restores_rally(
