@@ -209,11 +209,23 @@ def test_combat_defense_has_emergency_candidate(blackboard) -> None:
 def test_combat_waits_for_reinforcement_supply_after_first_attack(blackboard) -> None:
     blackboard.combat_mode = CombatMode.ATTACK
     blackboard.attack_started = True
-    blackboard.update(make_snapshot(army_supply=blackboard.config.reinforcement_army_supply - 1))
+    blackboard.update(
+        make_snapshot(
+            army_supply=blackboard.config.attack_army_supply,
+            idle_marine_count=5,
+            idle_marauder_count=1,
+        )
+    )
 
     assert CombatManager().propose(blackboard) == []
 
-    blackboard.update(make_snapshot(army_supply=blackboard.config.reinforcement_army_supply))
+    blackboard.update(
+        make_snapshot(
+            army_supply=blackboard.config.attack_army_supply,
+            idle_marine_count=6,
+            idle_marauder_count=1,
+        )
+    )
     candidate = CombatManager().propose(blackboard)[0]
 
     assert candidate.intent.intent_type is IntentType.ATTACK_ENEMY

@@ -22,10 +22,11 @@ class CombatManager:
 
         snapshot = board.snapshot
         emergency = board.combat_mode is CombatMode.DEFEND
+        idle_reinforcement_supply = snapshot.idle_marine_count + 2 * snapshot.idle_marauder_count
         if (
             board.combat_mode is CombatMode.ATTACK
             and board.attack_started
-            and snapshot.army_supply < board.config.reinforcement_army_supply
+            and idle_reinforcement_supply < board.config.reinforcement_army_supply
         ):
             return []
         parameters = (
