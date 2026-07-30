@@ -33,6 +33,7 @@ class EconomyManager:
                     f"{intent_type.value.lower()}:{snapshot.game_loop}",
                     "economy",
                     parameters={"resource_priority": resource_priority},
+                    uses_worker=True,
                 )
             )
         if snapshot.worker_count < board.config.worker_limit and snapshot.idle_townhall_count > 0:

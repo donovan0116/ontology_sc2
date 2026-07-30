@@ -311,7 +311,6 @@ def load_config(path: Path) -> AppConfig:
                 _BOT_DEFAULTS.scout_start_time_seconds,
             ),
             "scout_start_time_seconds",
-            allow_zero=True,
         ),
         attack_army_supply=_positive(
             _typed(
@@ -363,7 +362,6 @@ def load_config(path: Path) -> AppConfig:
                 _BOT_DEFAULTS.task_retry_cooldown_steps,
             ),
             "task_retry_cooldown_steps",
-            allow_zero=True,
         ),
         task_timeout_seconds=_positive(
             _typed(

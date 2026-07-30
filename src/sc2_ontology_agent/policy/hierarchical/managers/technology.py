@@ -31,7 +31,7 @@ class TechnologyManager:
             _candidate(
                 board,
                 current.intent_type,
-                70,
+                80 if current.intent_type is IntentType.UPGRADE_ORBITAL else 70,
                 "next_technology_goal",
                 current.key,
                 "technology",

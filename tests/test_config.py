@@ -34,6 +34,8 @@ def test_hierarchical_config_defaults_are_complete(tmp_path: Path) -> None:
         ("bot:\n  rally_map_fraction: 0.0\n", "rally_map_fraction"),
         ("bot:\n  rally_map_fraction: 1.0\n", "rally_map_fraction"),
         ("bot:\n  task_retry_limit: -1\n", "task_retry_limit"),
+        ("bot:\n  scout_start_time_seconds: 0\n", "scout_start_time_seconds"),
+        ("bot:\n  task_retry_cooldown_steps: 0\n", "task_retry_cooldown_steps"),
     ],
 )
 def test_invalid_hierarchical_config_is_rejected(

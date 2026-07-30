@@ -13,6 +13,7 @@ class _CandidateCosts(TypedDict, total=False):
     vespene_cost: int
     supply_cost: float
     uses_build_worker: bool
+    uses_worker: bool
     producer: ProducerKind | None
     emergency: bool
 
@@ -28,12 +29,11 @@ def _candidate(
     parameters: Mapping[str, IntentParameter] | None = None,
     **costs: Unpack[_CandidateCosts],
 ) -> CandidateIntent:
-    intent_parameters: dict[str, IntentParameter] = {
-        "task_key": task_key,
-        "source_manager": source_manager,
-    }
+    intent_parameters: dict[str, IntentParameter] = {}
     if parameters is not None:
         intent_parameters.update(parameters)
+    intent_parameters["task_key"] = task_key
+    intent_parameters["source_manager"] = source_manager
     intent = MacroIntent(
         intent_type,
         priority,

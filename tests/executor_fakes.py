@@ -39,9 +39,12 @@ class FakeUnit:
         self.moves: list[object] = []
         self.targets: list[object] = []
         self.gathers: list[object] = []
+        self.on_command: Callable[[FakeUnit, str], None] | None = None
 
     def build(self, unit_type: object, position: object | None = None) -> object:
         self.builds.append((unit_type, position))
+        if self.on_command is not None:
+            self.on_command(self, "build")
         return self.command_result
 
     def train(self, unit_type: object) -> object:
@@ -58,6 +61,8 @@ class FakeUnit:
 
     def move(self, target: object) -> object:
         self.moves.append(target)
+        if self.on_command is not None:
+            self.on_command(self, "move")
         return self.command_result
 
     def attack(self, target: object) -> object:
@@ -66,6 +71,8 @@ class FakeUnit:
 
     def gather(self, target: object) -> object:
         self.gathers.append(target)
+        if self.on_command is not None:
+            self.on_command(self, "gather")
         return object()
 
     def distance_to(self, target: FakeUnit | Point2) -> float:
@@ -130,7 +137,10 @@ class FakeTypedCollection:
 
 class ExecutorFakeBot:
     def __init__(self) -> None:
+        self.unit_tags_received_action: set[int] = set()
+        self.worker_commands: list[str] = []
         self.worker = FakeUnit(1, Point2((0, 0)))
+        self.worker.on_command = self._record_worker_command
         self.workers = FakeGroup([self.worker])
         self.townhalls = FakeGroup()
         self.vespene_geyser = FakeGroup()
@@ -144,6 +154,7 @@ class ExecutorFakeBot:
         self.enemy_start_locations = [self.enemy_start]
         self.game_info = SimpleNamespace(map_center=Point2((50, 50)))
         self.next_expansion: Point2 | None = Point2((20, 0))
+        self.next_placement: Point2 | None = Point2((7, 0))
         self.distribution_ratios: list[float] = []
         self.supply_left = 200
         self.affordable = True
@@ -158,8 +169,15 @@ class ExecutorFakeBot:
     def select_build_worker(self, _position: object) -> FakeUnit | None:
         return self.worker
 
+    async def find_placement(self, *_args: object, **_kwargs: object) -> Point2 | None:
+        return self.next_placement
+
     async def get_next_expansion(self) -> Point2 | None:
         return self.next_expansion
 
     async def distribute_workers(self, resource_ratio: float = 2) -> None:
         self.distribution_ratios.append(resource_ratio)
+
+    def _record_worker_command(self, worker: FakeUnit, command: str) -> None:
+        self.unit_tags_received_action.add(worker.tag)
+        self.worker_commands.append(command)

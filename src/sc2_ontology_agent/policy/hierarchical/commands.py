@@ -47,7 +47,7 @@ class ProducerKind(str, Enum):
 class ProductionGoal:
     key: str
     intent_type: IntentType
-    completion_field: str
+    completion_field: str | None
     completion_target: int | float | bool
     required: bool = True
 
@@ -58,6 +58,7 @@ class TaskRecord:
     state: TaskState = TaskState.PLANNED
     attempts: int = 0
     last_transition_loop: int = 0
+    last_transition_step: int = 0
     accepted_time_seconds: float | None = None
     reason: str | None = None
     replacement_used: bool = False
@@ -71,5 +72,6 @@ class CandidateIntent:
     vespene_cost: int = 0
     supply_cost: float = 0.0
     uses_build_worker: bool = False
+    uses_worker: bool = False
     producer: ProducerKind | None = None
     emergency: bool = False

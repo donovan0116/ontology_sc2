@@ -8,7 +8,12 @@ from sc2_ontology_agent.policy.hierarchical.commands import (
 )
 
 BUILD_ORDER: tuple[ProductionGoal, ...] = (
-    ProductionGoal("build:first_depot", IntentType.BUILD_SUPPLY, "supply_depot_count", 1),
+    ProductionGoal(
+        "build:first_depot",
+        IntentType.BUILD_SUPPLY,
+        "ready_supply_depot_count",
+        1,
+    ),
     ProductionGoal("build:first_barracks", IntentType.BUILD_BARRACKS, "barracks_count", 1),
     ProductionGoal("build:first_refinery", IntentType.BUILD_REFINERY, "refinery_count", 1),
     ProductionGoal("upgrade:first_orbital", IntentType.UPGRADE_ORBITAL, "orbital_count", 1),

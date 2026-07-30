@@ -44,7 +44,7 @@ class ConstructionManager:
                     priority=(
                         90
                         if supply_pressure and current.intent_type is IntentType.BUILD_SUPPLY
-                        else 70
+                        else 85
                     ),
                 )
             )

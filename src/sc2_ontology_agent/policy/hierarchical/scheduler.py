@@ -83,7 +83,9 @@ class CommandScheduler:
             available_minerals -= candidate.mineral_cost
             available_vespene -= candidate.vespene_cost
             available_supply -= candidate.supply_cost
-            worker_reserved = worker_reserved or candidate.uses_build_worker
+            worker_reserved = worker_reserved or (
+                candidate.uses_build_worker or candidate.uses_worker
+            )
             self._reserve_producer(candidate.producer, producer_capacity)
             attempts = (
                 blackboard.mark_scheduled(candidate.task_key).attempts
@@ -153,7 +155,7 @@ class CommandScheduler:
             return "insufficient_vespene"
         if candidate.supply_cost > available_supply:
             return "insufficient_supply"
-        if candidate.uses_build_worker and worker_reserved:
+        if (candidate.uses_build_worker or candidate.uses_worker) and worker_reserved:
             return "build_worker_reserved"
         if candidate.producer is not None:
             producer_reason = CommandScheduler._producer_suppression_reason(

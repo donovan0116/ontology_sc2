@@ -51,15 +51,22 @@ class SimpleExecutor:
     async def _distribute_workers(self, resource_priority: object | None = None) -> ExecutionResult:
         if not self._bot.workers:
             return ExecutionResult(ExecutionStatus.REJECTED, "no_workers")
-        if not self._bot.workers.idle:
-            return ExecutionResult(ExecutionStatus.WAITING, "no_idle_workers")
         if not self._bot.townhalls.ready or not self._bot.mineral_field:
             return ExecutionResult(ExecutionStatus.REJECTED, "mining_prerequisite_missing")
-        target = self._priority_gather_target(resource_priority)
+        workers = self._action_free_workers()
+        if not workers:
+            return ExecutionResult(ExecutionStatus.WAITING, "workers_already_commanded")
+        idle_workers = workers.idle
+        target = (
+            self._priority_gather_target(resource_priority, idle_workers) if idle_workers else None
+        )
         if target is not None:
-            worker = self._bot.workers.idle.closest_to(target)
+            worker = idle_workers.closest_to(target)
             command = worker.gather(target)
             return self._command_result(command, "gather_command_rejected")
+        commanded_worker_tags = self._worker_tags_received_action()
+        if commanded_worker_tags:
+            return ExecutionResult(ExecutionStatus.WAITING, "workers_already_commanded")
         if resource_priority == "gas":
             await self._bot.distribute_workers(resource_ratio=1.5)
         elif resource_priority == "minerals":
@@ -68,8 +75,12 @@ class SimpleExecutor:
             await self._bot.distribute_workers()
         return ExecutionResult(ExecutionStatus.ACCEPTED)
 
-    def _priority_gather_target(self, resource_priority: object) -> Unit | None:
-        worker = self._bot.workers.idle.first
+    def _priority_gather_target(
+        self,
+        resource_priority: object,
+        workers: Units,
+    ) -> Unit | None:
+        worker = workers.first
         if resource_priority == "gas":
             refineries = self._bot.gas_buildings.ready.filter(
                 lambda refinery: refinery.surplus_harvesters < 0
@@ -104,8 +115,10 @@ class SimpleExecutor:
         depots = self._bot.structures.of_type(
             {UnitTypeId.SUPPLYDEPOT, UnitTypeId.SUPPLYDEPOTLOWERED}
         )
-        if not depots.ready:
+        if not depots:
             return ExecutionResult(ExecutionStatus.REJECTED, "supply_depot_prerequisite_missing")
+        if not depots.ready:
+            return ExecutionResult(ExecutionStatus.WAITING, "supply_depot_prerequisite_not_ready")
         return await self._build_structure(UnitTypeId.BARRACKS)
 
     async def _build_refinery(self) -> ExecutionResult:
@@ -150,7 +163,7 @@ class SimpleExecutor:
         )
         if placement is None:
             return ExecutionResult(ExecutionStatus.FAILED, "build_placement_not_found")
-        worker = self._bot.select_build_worker(placement)
+        worker = self._select_worker(placement)
         if worker is None:
             return ExecutionResult(ExecutionStatus.FAILED, "build_worker_not_found")
         command = worker.build(unit_type, placement)
@@ -159,7 +172,7 @@ class SimpleExecutor:
     async def _build_at(self, unit_type: UnitTypeId, location: Point2 | Unit) -> ExecutionResult:
         if not self._bot.can_afford(unit_type):
             return ExecutionResult(ExecutionStatus.WAITING, "insufficient_resources")
-        worker = self._bot.select_build_worker(location)
+        worker = self._select_worker(location)
         if worker is None:
             return ExecutionResult(ExecutionStatus.FAILED, "build_worker_not_found")
         command = worker.build(unit_type, location)
@@ -234,7 +247,7 @@ class SimpleExecutor:
         return self._command_result(command, "train_marauder_command_rejected")
 
     async def _scout_enemy_start(self) -> ExecutionResult:
-        workers = self._bot.workers.filter(
+        workers = self._action_free_workers().filter(
             lambda worker: not worker.is_carrying_minerals and not worker.is_carrying_vespene
         )
         if not workers:
@@ -337,6 +350,26 @@ class SimpleExecutor:
 
     def _bio_units(self) -> Units:
         return self._bot.units.of_type({UnitTypeId.MARINE, UnitTypeId.MARAUDER})
+
+    def _action_free_workers(self) -> Units:
+        commanded_tags = self._worker_tags_received_action()
+        return self._bot.workers.filter(lambda worker: worker.tag not in commanded_tags)
+
+    def _worker_tags_received_action(self) -> set[int]:
+        received_action: set[int] = set(getattr(self._bot, "unit_tags_received_action", set()))
+        worker_tags = {worker.tag for worker in self._bot.workers}
+        return worker_tags.intersection(received_action)
+
+    def _select_worker(self, location: Point2 | Unit) -> Unit | None:
+        selected = self._bot.select_build_worker(location)
+        commanded_tags = self._worker_tags_received_action()
+        if selected is not None and selected.tag not in commanded_tags:
+            return selected
+        workers = self._action_free_workers()
+        if not workers:
+            return None
+        idle_workers = workers.idle
+        return idle_workers.closest_to(location) if idle_workers else None
 
     async def _idle(self) -> ExecutionResult:
         return ExecutionResult(ExecutionStatus.WAITING, "no_action")

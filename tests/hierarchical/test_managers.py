@@ -9,6 +9,7 @@ from sc2_ontology_agent.policy.hierarchical.commands import (
     ProductionPhase,
     TaskState,
 )
+from sc2_ontology_agent.policy.hierarchical.managers import _candidate
 from sc2_ontology_agent.policy.hierarchical.managers.combat import CombatManager
 from sc2_ontology_agent.policy.hierarchical.managers.construction import ConstructionManager
 from sc2_ontology_agent.policy.hierarchical.managers.economy import EconomyManager
@@ -50,7 +51,12 @@ def test_economy_proposes_worker_and_gas_biased_distribution(blackboard) -> None
 
 def test_construction_proposes_only_first_incomplete_build_goal(blackboard) -> None:
     ProductionStrategy().update(blackboard)
-    blackboard.update(make_snapshot(supply_depot_count=1))
+    blackboard.update(
+        make_snapshot(
+            supply_depot_count=1,
+            ready_supply_depot_count=1,
+        )
+    )
 
     candidates = ConstructionManager().propose(blackboard)
 
@@ -67,6 +73,7 @@ def test_construction_uses_an_addonless_barracks_without_reserving_a_worker(
     blackboard.update(
         make_snapshot(
             supply_depot_count=1,
+            ready_supply_depot_count=1,
             barracks_count=2,
             refinery_count=1,
             orbital_count=1,
@@ -97,6 +104,7 @@ def test_construction_waits_for_worker_threshold_before_expansion(blackboard) ->
     ProductionStrategy().update(blackboard)
     before_threshold = make_snapshot(
         supply_depot_count=1,
+        ready_supply_depot_count=1,
         barracks_count=1,
         refinery_count=1,
         orbital_count=1,
@@ -112,6 +120,7 @@ def test_construction_waits_for_worker_threshold_before_expansion(blackboard) ->
     blackboard.update(
         make_snapshot(
             supply_depot_count=1,
+            ready_supply_depot_count=1,
             barracks_count=1,
             refinery_count=1,
             orbital_count=1,
@@ -166,6 +175,7 @@ def test_technology_proposes_stim_when_techlab_is_ready(blackboard) -> None:
     blackboard.update(
         make_snapshot(
             supply_depot_count=1,
+            ready_supply_depot_count=1,
             barracks_count=2,
             refinery_count=1,
             orbital_count=1,
@@ -275,3 +285,27 @@ def test_all_manager_candidates_include_scalar_task_metadata(blackboard) -> None
         assert parameters["task_key"] == candidate.task_key
         assert isinstance(parameters["task_key"], str)
         assert isinstance(parameters["source_manager"], str)
+
+
+def test_candidate_metadata_cannot_be_overwritten_by_optional_parameters(
+    blackboard,
+) -> None:
+    candidate = _candidate(
+        blackboard,
+        IntentType.SCOUT_ENEMY_START,
+        50,
+        "scout",
+        "scout:enemy_start",
+        "scout",
+        parameters={
+            "task_key": "overwritten",
+            "source_manager": "overwritten",
+            "extra": True,
+        },
+    )
+
+    assert candidate.intent.parameters == {
+        "task_key": "scout:enemy_start",
+        "source_manager": "scout",
+        "extra": True,
+    }

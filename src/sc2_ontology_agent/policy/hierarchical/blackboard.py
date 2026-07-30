@@ -34,13 +34,17 @@ class StrategicBlackboard:
         self.attack_started = False
         self.mode_before_defense = CombatMode.DEVELOP
         self._events: list[StrategyEvent] = []
+        self._decision_step = 0
 
     def update(self, snapshot: GameSnapshot) -> None:
+        self._decision_step += 1
         self.snapshot = snapshot
         for key, record in tuple(self.tasks.items()):
-            observed = getattr(snapshot, record.goal.completion_field)
+            completion_field = record.goal.completion_field
+            observed = getattr(snapshot, completion_field) if completion_field is not None else None
             if (
-                record.state is not TaskState.COMPLETED
+                observed is not None
+                and record.state is not TaskState.COMPLETED
                 and observed >= record.goal.completion_target
             ):
                 self._transition(key, TaskState.COMPLETED, "completion_fact_observed")
@@ -52,28 +56,49 @@ class StrategicBlackboard:
             ):
                 self._transition(key, TaskState.TIMED_OUT, "task_timeout")
                 self._emit_replanned(key, "task_timeout")
+                self._handle_exhausted_retries(key)
 
-    def ensure_task(self, goal: ProductionGoal) -> TaskRecord:
+    def ensure_task(
+        self,
+        goal: ProductionGoal,
+        *,
+        include_in_production_queue: bool = True,
+    ) -> TaskRecord:
         if goal.key not in self.tasks:
             self.tasks[goal.key] = TaskRecord(
                 goal=goal,
                 last_transition_loop=self.snapshot.game_loop,
+                last_transition_step=self._decision_step,
             )
-            self.production_goals.append(goal)
+            if include_in_production_queue:
+                self.production_goals.append(goal)
         return self.tasks[goal.key]
 
     def is_schedulable(self, key: str) -> bool:
         record = self.tasks[key]
-        if record.state in {TaskState.COMPLETED, TaskState.ACCEPTED}:
+        if record.state in {
+            TaskState.SCHEDULED,
+            TaskState.ACCEPTED,
+            TaskState.COMPLETED,
+        }:
             return False
-        return (
-            self.snapshot.game_loop - record.last_transition_loop
-            >= self.config.task_retry_cooldown_steps * self.config.decision_interval_steps
-            if record.state is TaskState.WAITING
-            else record.attempts <= self.config.task_retry_limit
-        )
+        if record.attempts > self.config.task_retry_limit:
+            return False
+        if record.state in {
+            TaskState.WAITING,
+            TaskState.REJECTED,
+            TaskState.FAILED,
+            TaskState.TIMED_OUT,
+        }:
+            return (
+                self._decision_step - record.last_transition_step
+                >= self.config.task_retry_cooldown_steps
+            )
+        return True
 
     def mark_scheduled(self, key: str) -> TaskRecord:
+        if not self.is_schedulable(key):
+            raise ValueError(f"task is not schedulable: {key}")
         record = self.tasks[key]
         self._transition(
             key,
@@ -109,7 +134,20 @@ class StrategicBlackboard:
             result.reason,
             accepted_time_seconds=accepted_time_seconds,
         )
-        if result.status in {ExecutionStatus.FAILED, ExecutionStatus.REJECTED}:
+        if (
+            result.status is ExecutionStatus.ACCEPTED
+            and intent.intent_type is IntentType.SCOUT_ENEMY_START
+        ):
+            self._transition(
+                task_key,
+                TaskState.COMPLETED,
+                "one_shot_command_accepted",
+            )
+        elif result.status in {
+            ExecutionStatus.WAITING,
+            ExecutionStatus.REJECTED,
+            ExecutionStatus.FAILED,
+        }:
             self._handle_exhausted_retries(task_key)
         return self.tasks[task_key]
 
@@ -128,7 +166,8 @@ class StrategicBlackboard:
             )
             self._emit_replanned(key, "task_retry_exhausted")
             return
-        self._transition(key, TaskState.FAILED, record.reason)
+        if record.state is not TaskState.FAILED:
+            self._transition(key, TaskState.FAILED, record.reason)
 
     def _transition(
         self,
@@ -146,6 +185,7 @@ class StrategicBlackboard:
             state=state,
             reason=reason,
             last_transition_loop=self.snapshot.game_loop,
+            last_transition_step=self._decision_step,
             attempts=previous.attempts if attempts is None else attempts,
             accepted_time_seconds=accepted_time_seconds,
             replacement_used=(

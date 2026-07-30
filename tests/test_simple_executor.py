@@ -14,7 +14,9 @@ from sc2.position import Point2
 from sc2_ontology_agent.config import BotConfig
 from sc2_ontology_agent.domain.intent import IntentType, MacroIntent
 from sc2_ontology_agent.domain.records import ExecutionResult, ExecutionStatus
+from sc2_ontology_agent.domain.state import GameSnapshot
 from sc2_ontology_agent.execution.simple_executor import SimpleExecutor
+from sc2_ontology_agent.policy.hierarchical.advisor import HierarchicalRulePolicy
 
 
 class FakeMarine:
@@ -165,6 +167,30 @@ def test_scout_fails_when_move_command_is_rejected() -> None:
 
     assert result == ExecutionResult(ExecutionStatus.FAILED, "scout_command_rejected")
     assert bot.worker.moves == [bot.enemy_start]
+
+
+def test_scout_excludes_worker_already_commanded_this_frame() -> None:
+    bot = ExecutorFakeBot()
+    spare_worker = FakeUnit(2, Point2((1, 0)))
+    spare_worker.on_command = bot._record_worker_command
+    bot.workers = FakeGroup([bot.worker, spare_worker])
+    bot.unit_tags_received_action.add(bot.worker.tag)
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(
+        executor.execute(
+            MacroIntent(
+                IntentType.SCOUT_ENEMY_START,
+                30,
+                "scout_window",
+                100,
+            )
+        )
+    )
+
+    assert result.status is ExecutionStatus.ACCEPTED
+    assert bot.worker.moves == []
+    assert spare_worker.moves == [bot.enemy_start]
 
 
 def test_rally_moves_only_idle_bio_units_to_staging_point() -> None:
@@ -429,6 +455,35 @@ def test_distribution_uses_requested_resource_priority(
     assert bot.distribution_ratios == [resource_ratio]
 
 
+@pytest.mark.parametrize(
+    ("resource_priority", "resource_ratio"),
+    [("gas", 1.5), ("minerals", 2.0)],
+)
+def test_distribution_rebalances_busy_workers_when_deficits_exist(
+    resource_priority: str,
+    resource_ratio: float,
+) -> None:
+    bot = ExecutorFakeBot()
+    bot.worker.is_idle = False
+    bot.townhalls = FakeGroup([FakeUnit(10, Point2((0, 0)), surplus_harvesters=-1)])
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(
+        executor.execute(
+            MacroIntent(
+                IntentType.DISTRIBUTE_WORKERS,
+                80,
+                "saturation_deficit",
+                100,
+                {"resource_priority": resource_priority},
+            )
+        )
+    )
+
+    assert result.status is ExecutionStatus.ACCEPTED
+    assert bot.distribution_ratios == [resource_ratio]
+
+
 def priority_distribution_bot() -> tuple[ExecutorFakeBot, FakeUnit, FakeUnit, FakeUnit]:
     bot = ExecutorFakeBot()
     townhall = FakeUnit(10, Point2((0, 0)), surplus_harvesters=-1)
@@ -495,6 +550,101 @@ def test_build_refinery_selects_free_geyser_and_worker() -> None:
 
     assert result.status is ExecutionStatus.ACCEPTED
     assert bot.worker.builds == [(UnitTypeId.REFINERY, bot.geyser)]
+
+
+@pytest.mark.parametrize(
+    ("depots", "expected"),
+    [
+        (
+            FakeGroup(),
+            ExecutionResult(
+                ExecutionStatus.REJECTED,
+                "supply_depot_prerequisite_missing",
+            ),
+        ),
+        (
+            FakeGroup([FakeUnit(11, Point2((3, 0)), ready=False)]),
+            ExecutionResult(
+                ExecutionStatus.WAITING,
+                "supply_depot_prerequisite_not_ready",
+            ),
+        ),
+    ],
+)
+def test_barracks_distinguishes_missing_from_unready_depot(
+    depots: FakeGroup,
+    expected: ExecutionResult,
+) -> None:
+    bot = ExecutorFakeBot()
+    bot.structures = FakeTypedCollection({UnitTypeId.SUPPLYDEPOT: depots})
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(
+        executor.execute(MacroIntent(IntentType.BUILD_BARRACKS, 70, "first_barracks", 100))
+    )
+
+    assert result == expected
+
+
+def test_construction_excludes_worker_already_commanded_this_frame() -> None:
+    bot = ExecutorFakeBot()
+    spare_worker = FakeUnit(2, Point2((1, 0)))
+    spare_worker.on_command = bot._record_worker_command
+    bot.workers = FakeGroup([bot.worker, spare_worker])
+    bot.unit_tags_received_action.add(bot.worker.tag)
+    bot.townhalls = FakeGroup([FakeUnit(10, Point2((0, 0)))])
+    bot.structures = FakeTypedCollection(
+        {UnitTypeId.SUPPLYDEPOT: FakeGroup([FakeUnit(11, Point2((3, 0)))])}
+    )
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    result = asyncio.run(
+        executor.execute(MacroIntent(IntentType.BUILD_BARRACKS, 85, "first_barracks", 100))
+    )
+
+    assert result.status is ExecutionStatus.ACCEPTED
+    assert bot.worker.builds == []
+    assert spare_worker.builds == [(UnitTypeId.BARRACKS, bot.next_placement)]
+
+
+def test_construction_suppresses_distribution_and_scout_worker_overwrite() -> None:
+    advisor = HierarchicalRulePolicy(BotConfig(scout_start_time_seconds=11))
+
+    def snapshot(game_loop: int, game_time_seconds: float) -> GameSnapshot:
+        return GameSnapshot.empty(
+            game_loop=game_loop,
+            game_time_seconds=game_time_seconds,
+            minerals=500,
+            supply_used=12,
+            supply_cap=30,
+            worker_count=12,
+            idle_worker_count=1,
+            mineral_saturation_deficit=1,
+            townhall_count=1,
+            ready_townhall_count=1,
+            idle_townhall_count=1,
+            supply_depot_count=1,
+            ready_supply_depot_count=1,
+        )
+
+    advisor.recommend(snapshot(100, 10.0))
+    intents = advisor.recommend(snapshot(104, 11.0))
+
+    assert intents[0].intent_type is IntentType.BUILD_BARRACKS
+    assert IntentType.DISTRIBUTE_WORKERS not in {intent.intent_type for intent in intents}
+    assert IntentType.SCOUT_ENEMY_START not in {intent.intent_type for intent in intents}
+
+    bot = ExecutorFakeBot()
+    bot.townhalls = FakeGroup([FakeUnit(10, Point2((0, 0)), surplus_harvesters=-1)])
+    bot.structures = FakeTypedCollection(
+        {UnitTypeId.SUPPLYDEPOT: FakeGroup([FakeUnit(11, Point2((3, 0)))])}
+    )
+    executor = SimpleExecutor(cast(BotAI, bot), BotConfig())
+
+    results = [asyncio.run(executor.execute(intent)) for intent in intents]
+
+    assert results[0].status is ExecutionStatus.ACCEPTED
+    assert bot.worker_commands == ["build"]
 
 
 def test_expand_fails_when_no_expansion_location_exists() -> None:

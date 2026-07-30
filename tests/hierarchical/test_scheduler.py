@@ -19,6 +19,7 @@ def make_candidate(
     vespene: int = 0,
     supply: float = 0,
     worker: bool = False,
+    uses_worker: bool = False,
     producer: ProducerKind | None = None,
     emergency: bool = False,
 ) -> CandidateIntent:
@@ -35,6 +36,7 @@ def make_candidate(
         vespene_cost=vespene,
         supply_cost=supply,
         uses_build_worker=worker,
+        uses_worker=uses_worker,
         producer=producer,
         emergency=emergency,
     )
@@ -185,3 +187,32 @@ def test_scheduler_returns_idle_when_every_candidate_is_unschedulable(blackboard
     )
 
     assert [intent.intent_type for intent in selected] == [IntentType.IDLE]
+
+
+def test_scheduler_reserves_worker_for_higher_priority_construction(blackboard) -> None:
+    state = make_snapshot(minerals=500, worker_count=12)
+    candidates = [
+        make_candidate(
+            IntentType.BUILD_BARRACKS,
+            85,
+            "build:first_barracks",
+            minerals=150,
+            worker=True,
+        ),
+        make_candidate(
+            IntentType.DISTRIBUTE_WORKERS,
+            80,
+            "distribute",
+            uses_worker=True,
+        ),
+        make_candidate(
+            IntentType.SCOUT_ENEMY_START,
+            50,
+            "scout",
+            uses_worker=True,
+        ),
+    ]
+
+    selected = CommandScheduler().select(state, candidates, blackboard)
+
+    assert [intent.intent_type for intent in selected] == [IntentType.BUILD_BARRACKS]
