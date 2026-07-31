@@ -35,7 +35,7 @@ class ScoutManager:
             _candidate(
                 board,
                 IntentType.SCOUT_ENEMY_START,
-                50,
+                82,
                 "scout_time_window_open",
                 "scout:enemy_start",
                 "scout",

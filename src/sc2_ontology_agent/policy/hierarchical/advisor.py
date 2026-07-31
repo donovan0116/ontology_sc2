@@ -53,6 +53,7 @@ class HierarchicalRulePolicy:
                     vespene_cost=item.vespene_cost,
                     supply_cost=item.supply_cost,
                     uses_build_worker=item.uses_build_worker,
+                    uses_worker=item.uses_worker,
                     producer=item.producer.value if item.producer is not None else None,
                     emergency=item.emergency,
                     attempts=(

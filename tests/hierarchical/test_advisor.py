@@ -248,3 +248,73 @@ def test_accepted_scout_task_completes_and_is_not_repeated() -> None:
     ]
     later = advisor.recommend(make_snapshot(game_loop=104, minerals=0))
     assert IntentType.SCOUT_ENEMY_START not in {intent.intent_type for intent in later}
+
+
+def test_worker_fairness_orders_construction_then_scout_then_distribution() -> None:
+    advisor = HierarchicalRulePolicy(BotConfig(scout_start_time_seconds=11))
+
+    construction = advisor.recommend(
+        make_snapshot(
+            game_loop=100,
+            game_time_seconds=10.0,
+            minerals=500,
+            mineral_saturation_deficit=2,
+            gas_saturation_deficit=3,
+        )
+    )
+
+    assert construction[0].intent_type is IntentType.BUILD_SUPPLY
+    assert IntentType.DISTRIBUTE_WORKERS not in {intent.intent_type for intent in construction}
+    depot = next(intent for intent in construction if intent.intent_type is IntentType.BUILD_SUPPLY)
+    advisor.observe_execution(
+        depot,
+        ExecutionResult(ExecutionStatus.ACCEPTED),
+    )
+
+    scouting = advisor.recommend(
+        make_snapshot(
+            game_loop=132,
+            game_time_seconds=11.0,
+            minerals=400,
+            mineral_saturation_deficit=2,
+            gas_saturation_deficit=3,
+            supply_depot_count=1,
+            ready_supply_depot_count=0,
+            pending_actions=(IntentType.BUILD_SUPPLY.value,),
+        )
+    )
+
+    assert IntentType.SCOUT_ENEMY_START in {intent.intent_type for intent in scouting}
+    assert IntentType.DISTRIBUTE_WORKERS not in {intent.intent_type for intent in scouting}
+    scout_proposal = next(
+        event
+        for event in advisor.drain_events()
+        if event.event_type == "command_proposed"
+        and event.details["intent_type"] == IntentType.SCOUT_ENEMY_START.value
+    )
+    assert scout_proposal.details["uses_worker"] is True
+    assert scout_proposal.details["uses_build_worker"] is False
+    scout = next(
+        intent for intent in scouting if intent.intent_type is IntentType.SCOUT_ENEMY_START
+    )
+    advisor.observe_execution(
+        scout,
+        ExecutionResult(ExecutionStatus.ACCEPTED),
+    )
+    assert advisor.blackboard.tasks["scout:enemy_start"].state is TaskState.COMPLETED
+
+    distribution = advisor.recommend(
+        make_snapshot(
+            game_loop=164,
+            game_time_seconds=12.0,
+            minerals=400,
+            mineral_saturation_deficit=2,
+            gas_saturation_deficit=3,
+            supply_depot_count=1,
+            ready_supply_depot_count=0,
+            pending_actions=(IntentType.BUILD_SUPPLY.value,),
+        )
+    )
+
+    assert IntentType.DISTRIBUTE_WORKERS in {intent.intent_type for intent in distribution}
+    assert IntentType.SCOUT_ENEMY_START not in {intent.intent_type for intent in distribution}

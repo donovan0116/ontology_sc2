@@ -156,7 +156,7 @@ class CommandScheduler:
         if candidate.supply_cost > available_supply:
             return "insufficient_supply"
         if (candidate.uses_build_worker or candidate.uses_worker) and worker_reserved:
-            return "build_worker_reserved"
+            return "worker_reserved"
         if candidate.producer is not None:
             producer_reason = CommandScheduler._producer_suppression_reason(
                 candidate.producer,

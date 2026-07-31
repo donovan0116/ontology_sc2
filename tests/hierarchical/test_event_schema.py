@@ -109,6 +109,7 @@ def test_hierarchical_events_have_documented_scalar_detail_schemas() -> None:
         "vespene_cost",
         "supply_cost",
         "uses_build_worker",
+        "uses_worker",
         "producer",
         "emergency",
         "attempts",

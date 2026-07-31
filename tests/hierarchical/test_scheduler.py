@@ -207,7 +207,7 @@ def test_scheduler_reserves_worker_for_higher_priority_construction(blackboard) 
         ),
         make_candidate(
             IntentType.SCOUT_ENEMY_START,
-            50,
+            82,
             "scout",
             uses_worker=True,
         ),
@@ -216,3 +216,10 @@ def test_scheduler_reserves_worker_for_higher_priority_construction(blackboard) 
     selected = CommandScheduler().select(state, candidates, blackboard)
 
     assert [intent.intent_type for intent in selected] == [IntentType.BUILD_BARRACKS]
+    suppressed = [
+        event for event in blackboard.drain_events() if event.event_type == "command_suppressed"
+    ]
+    assert [event.details["reason"] for event in suppressed] == [
+        "worker_reserved",
+        "worker_reserved",
+    ]
